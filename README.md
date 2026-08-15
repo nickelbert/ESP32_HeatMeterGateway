@@ -1,0 +1,137 @@
+# Landis+Gyr Ultraheat T550 MQTT Gateway (ESP32-C3)
+
+A high-performance smart meter gateway for the **Landis+Gyr Ultraheat T550 (LUZ2)** heat meter. Built natively with **ESP-IDF v6.0 and FreeRTOS** in **PlatformIO** for the **LilyGO T-01C3** (ESP32-C3 in ESP-01 form factor).
+
+---
+
+## 🚀 Features
+
+- **Native ESP-IDF & FreeRTOS Architecture:** Non-blocking FreeRTOS tasks for optical meter reading, web server, telnet console, and MQTT client.
+- **Optical IR Interface (IEC 62056-21):**
+  - Wakeup sequence: 40x `0x00` null bytes + `/?!\r\n` at 300 Baud 7E1.
+  - Identification reading and dynamic baud rate switching to 19200 Baud 7E1.
+  - OBIS code line parser with automatic dual-value splitting (e.g. forward and return temperatures `9.4.0` and `9.4.1`).
+- **Home Assistant Auto-Discovery:**
+  - Automatically provisions 22 sensor entities (energy, volume, power, flow rate, temperatures, previous year values, operating hours, error hours, meter timestamp, serial number) and an interactive *"Read Meter Now"* button entity.
+- **Web-Based Configuration UI (Port 80):**
+  - Live configuration of WiFi credentials, MQTT broker settings, read interval, and dummy mode.
+  - Persistent storage in ESP32-C3 **NVS (Non-Volatile Storage)**.
+- **Dual Over-The-Air (OTA) Updates:**
+  - **Push-OTA:** Upload and flash `firmware.bin` directly via the browser or cURL.
+  - **Pull-OTA:** Trigger remote background firmware updates via HTTP URL.
+  - Uses dual-slot OTA partitions (`app0` / `app1`) with rollback safety.
+- **Telnet Remote Logging & Debug Console (Port 23):**
+  - Live log monitoring over the network.
+  - Test/Dummy mode: Feed simulated OBIS strings directly into the parser without an optical head.
+  - Commands: `send` (force MQTT state publish), `update` (OTA ready signal).
+- **Network Resiliency:**
+  - WiFi Station mode with automated reconnection logic.
+  - Automatic fallback to SoftAP mode (`ESP-HeatMeter-Setup` on `192.168.4.1`) if WiFi is unconfigured or unavailable.
+
+---
+
+## 📌 Pinout & Hardware Connection
+
+Designed as a drop-in replacement for ESP-01 IR read heads using the **LilyGO T-01C3**:
+
+| ESP-01 Header Pin | Signal Name | ESP32-C3 Pin | Function |
+|---|---|---|---|
+| **Pin 1** | GND | GND | Ground |
+| **Pin 2** | TXD | `GPIO21` | IR Transmitter Diode (300 Baud 7E1 Wakeup) |
+| **Pin 3** | GPIO2 | `GPIO2` / IO | Unused / Reserved |
+| **Pin 4** | CH_PD / EN | EN | Chip Enable / 3.3V Pullup |
+| **Pin 5** | GPIO0 / BOOT | `GPIO9` | Boot strapping pin |
+| **Pin 6** | RST | RST | Reset |
+| **Pin 7** | RXD | `GPIO20` | IR Phototransistor Receiver (19200 Baud 7E1 Data) |
+| **Pin 8** | VCC | 3.3V | Power Supply |
+
+---
+
+## 🛠️ Building & Flashing
+
+### Requirements
+- [PlatformIO Core](https://platformio.org/) or VSCode with the PlatformIO extension.
+
+### Initial Flash (via USB / Serial)
+1. Connect your ESP32-C3 / LilyGO T-01C3 via USB-to-UART adapter.
+2. Build and upload the project:
+   ```bash
+   pio run --target upload
+   ```
+3. Open the serial monitor (115200 Baud):
+   ```bash
+   pio device monitor -b 115200
+   ```
+
+### Over-The-Air (OTA) Updates (via WiFi)
+Once flashed and connected to WiFi:
+
+- **Browser Upload (Push):** Open `http://<ESP-IP>/`, select `.pio/build/esp32-c3/firmware.bin` under *Firmware Update (Push)*.
+- **Terminal Upload (Push):**
+  ```powershell
+  curl -X POST --data-binary "@.pio\build\esp32-c3\firmware.bin" http://<ESP-IP>/update
+  ```
+- **Remote Server Update (Pull):** Enter the firmware URL in the web UI under *Remote Update (Pull)* and click *Check & Pull Update*.
+
+---
+
+## ⚙️ Configuration
+
+1. Connect to the fallback access point **`ESP-HeatMeter-Setup`** or navigate to `http://<ESP-IP>/`.
+2. Fill out the configuration fields:
+   - **WiFi SSID & Password**
+   - **MQTT Broker (IP/Host & Port)**
+   - **MQTT Username & Password**
+   - **MQTT State Topic** (default: `ultraheat/state`)
+   - **Read Interval** (default: `3600` seconds / 1 hour)
+   - **Dummy Mode** (enable to test via Telnet without IR communication)
+3. Click **Save Configuration & Restart**.
+
+---
+
+## 📡 Home Assistant Integration
+
+When connected to MQTT, the gateway automatically discovers and creates the device **"Landis+Gyr T550"** with the following entities:
+
+| Sensor Name | OBIS Code | Unit | Device Class | State Class |
+|---|---|---|---|---|
+| Heat Energy | `6.8` | MWh | energy | total_increasing |
+| Volume | `6.26` | m³ | volume | total_increasing |
+| Heat Energy (Previous Year) | `6.8*01` | MWh | energy | total_increasing |
+| Volume (Previous Year) | `6.26*01` | m³ | volume | total_increasing |
+| Power | `6.6` | kW | power | measurement |
+| Power (Previous Year) | `6.6*01` | kW | power | measurement |
+| Flow Rate | `6.33` | m³/h | volume_flow_rate | measurement |
+| Flow Rate (Previous Year) | `6.33*01` | m³/h | volume_flow_rate | measurement |
+| Flow Temperature | `9.4.0` | °C | temperature | measurement |
+| Return Temperature | `9.4.1` | °C | temperature | measurement |
+| Flow Temp (Previous Year) | `9.4*01.0` | °C | temperature | measurement |
+| Return Temp (Previous Year) | `9.4*01.1` | °C | temperature | measurement |
+| Measurement Interval | `6.35` | min | duration | — |
+| Operating Hours | `6.31` | h | duration | total_increasing |
+| Error Hours | `6.32` | h | duration | total_increasing |
+| Error Hours (Previous Year) | `6.32*01` | h | duration | total_increasing |
+| Error Code | `F` | — | — | — |
+| Billing Date | `6.36` | — | timestamp | — |
+| Meter Timestamp | `9.36` | — | timestamp | — |
+| Serial Number | `9.20` | — | — | — |
+| Asset Number | `9.21` | — | — | — |
+| Nominal Flow | `9.24` | m³/h | volume_flow_rate | — |
+| **Read Meter Now** | Button | — | update | Trigger immediate readout |
+
+---
+
+## 🖥️ Telnet Debug Console
+
+Connect via port 23:
+```bash
+telnet <ESP-IP> 23
+```
+- **Simulate OBIS input:** Send raw lines like `6.8(0012.345*MWh)` or `9.4(052.1&037.4*C)` to test parsing.
+- **Trigger publish:** Send `send` to publish current JSON to MQTT.
+- **OTA Ready:** Send `update` to confirm update readiness.
+
+---
+
+## 📄 License
+MIT License.

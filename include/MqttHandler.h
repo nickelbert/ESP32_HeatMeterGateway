@@ -1,0 +1,22 @@
+#pragma once
+
+#include <string>
+#include "mqtt_client.h"
+#include "cJSON.h"
+
+class MqttHandler
+{
+private:
+    esp_mqtt_client_handle_t clientHandle = nullptr;
+    bool isConnectedState = false;
+
+    static void mqttEventHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, void *eventData);
+    void publishHaSensor(const std::string &obis, const std::string &name, const std::string &unit,
+                         const std::string &devClass, const std::string &stateClass, const std::string &icon);
+    void sendHaAutoDiscovery();
+
+public:
+    void setup();
+    void sendState();
+    bool isConnected() const;
+};

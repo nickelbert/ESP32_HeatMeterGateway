@@ -1,0 +1,34 @@
+# PlatformIO build artifacts & libraries
+.pio/
+.pioenvs/
+.piolibdeps/
+managed_components/
+dependencies.lock
+
+# ESP-IDF generated build artifacts
+sdkconfig
+sdkconfig.old
+sdkconfig.*
+!sdkconfig.defaults
+!sdkconfig.defaults*
+
+# IDE settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Local configuration overrides & secrets
+platformio_local.ini
+*.local.ini
+*secrets*
+
+# Log files
+*.log
+logfile*.txt
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
