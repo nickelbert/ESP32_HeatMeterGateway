@@ -56,14 +56,53 @@ void WifiManager::eventHandler(void *arg, esp_event_base_t eventBase, int32_t ev
             ip_event_got_ip_t *event = (ip_event_got_ip_t *)eventData;
             char ipBuf[16];
             esp_ip4addr_ntoa(&event->ip_info.ip, ipBuf, sizeof(ipBuf));
-
             self->isConnectedState = true;
-            self->isApModeActive = false;
             self->ipAddress = ipBuf;
             retryCount = 0;
-
+            self->stopReconnectTimer();
+            if (self->isApModeActive)
+            {
+                ESP_LOGI(TAG, "Reconnected to home network! Disabling fallback AP...");
+                esp_wifi_set_mode(WIFI_MODE_STA);
+                self->isApModeActive = false;
+            }
             ESP_LOGI(TAG, "WiFi connected! IP Address: %s", self->ipAddress.c_str());
         }
+    }
+}
+
+void WifiManager::reconnectTimerCallback(void *arg)
+{
+    WifiManager *self = static_cast<WifiManager *>(arg);
+    if (!self->isConnectedState && !ConfigManager.wifiSsid.empty())
+    {
+        ESP_LOGI(TAG, "Background reconnect attempt to SSID: %s", ConfigManager.wifiSsid.c_str());
+        esp_wifi_connect();
+    }
+}
+
+void WifiManager::startReconnectTimer()
+{
+    if (reconnectTimer == nullptr)
+    {
+        esp_timer_create_args_t timerArgs = {};
+        timerArgs.callback = &WifiManager::reconnectTimerCallback;
+        timerArgs.arg = this;
+        timerArgs.name = "wifiReconnect";
+        ESP_ERROR_CHECK(esp_timer_create(&timerArgs, &reconnectTimer));
+        // 15.000.000 microseconds
+        ESP_ERROR_CHECK(esp_timer_start_periodic(reconnectTimer, 15000000));
+        ESP_LOGI(TAG, "Background reconnect timer started (15s interval)");
+    }
+}
+void WifiManager::stopReconnectTimer()
+{
+    if (reconnectTimer != nullptr)
+    {
+        esp_timer_stop(reconnectTimer);
+        esp_timer_delete(reconnectTimer);
+        reconnectTimer = nullptr;
+        ESP_LOGI(TAG, "Background reconnect timer stopped");
     }
 }
 
@@ -125,7 +164,6 @@ void WifiManager::startAccessPoint()
 {
     isApModeActive = true;
     isConnectedState = false;
-
     wifi_config_t apConfig = {};
     const char *apSsid = "ESP-HeatMeter-Setup";
     std::strncpy((char *)apConfig.ap.ssid, apSsid, sizeof(apConfig.ap.ssid) - 1);
@@ -133,12 +171,29 @@ void WifiManager::startAccessPoint()
     apConfig.ap.channel = 1;
     apConfig.ap.max_connection = 4;
     apConfig.ap.authmode = WIFI_AUTH_OPEN;
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &apConfig));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-    ESP_LOGI(TAG, "SoftAP started: SSID '%s' (IP: 192.168.4.1)", apSsid);
+    if (ConfigManager.wifiSsid.empty())
+    {
+        // Mode AP
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &apConfig));
+        ESP_ERROR_CHECK(esp_wifi_start());
+        ESP_LOGI(TAG, "SoftAP started: SSID '%s' (IP: 192.168.4.1)", apSsid);
+    }
+    else
+    {
+        // Dual-Mode AP STA
+        wifi_config_t staConfig = {};
+        std::strncpy((char *)staConfig.sta.ssid, ConfigManager.wifiSsid.c_str(), sizeof(staConfig.sta.ssid) - 1);
+        std::strncpy((char *)staConfig.sta.password, ConfigManager.wifiPassword.c_str(), sizeof(staConfig.sta.password) - 1);
+        staConfig.sta.threshold.authmode = ConfigManager.wifiPassword.empty() ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &apConfig));
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &staConfig));
+        ESP_ERROR_CHECK(esp_wifi_start());
+        ESP_LOGI(TAG, "Fallback APSTA mode started: AP '%s' active, searching for '%s'", 
+                 apSsid, ConfigManager.wifiSsid.c_str());
+        startReconnectTimer();
+    }
 }
 
 bool WifiManager::isConnected() const
