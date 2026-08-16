@@ -7,8 +7,8 @@
 #include <cstdlib>
 
 static const char *TAG = "MeterT550";
-extern ConfigManager ConfigManager;
-extern TelnetServer TelnetServer;
+extern ConfigManager configManager;
+extern TelnetServer telnetServer;
 
 static MeterT550 *meterInstance = nullptr;
 
@@ -98,7 +98,7 @@ void MeterT550::configureUart(uint32_t baudRate)
 void MeterT550::setup()
 {
     meterInstance = this;
-    sensorDataJson = cJSON_CreateObject();
+    m_sensorDataJson = cJSON_CreateObject();
 
     ESP_ERROR_CHECK(uart_driver_install(uartPort, 1024, 0, 0, nullptr, 0));
     ESP_ERROR_CHECK(uart_set_pin(uartPort, txPin, rxPin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
@@ -110,7 +110,7 @@ void MeterT550::setup()
         4096,
         this,
         4,
-        &taskHandle);
+        &m_taskHandle);
 
     ESP_LOGI(TAG, "MeterT550 task started (UART1 on RX=%d, TX=%d)", rxPin, txPin);
 }
@@ -123,29 +123,29 @@ void MeterT550::meterTask(void *pvParameters)
     {
         uint32_t now = getMillis();
 
-        switch (self->currentState)
+        switch (self->m_currentState)
         {
             case MeterState::Idle:
             {
-                if (ConfigManager.dummyMode)
+                if (configManager.m_dummyMode)
                 {
                     vTaskDelay(pdMS_TO_TICKS(100));
                     break;
                 }
 
-                uint32_t intervalMs = ConfigManager.readIntervalSeconds * 1000UL;
-                if ((now - self->lastReadingTimestamp > intervalMs) || (self->lastReadingTimestamp == 0))
+                uint32_t intervalMs = configManager.m_readIntervalSeconds * 1000UL;
+                if ((now - self->m_lastReadingTimestamp > intervalMs) || (self->m_lastReadingTimestamp == 0))
                 {
-                    TelnetServer.telnetPrint("[Meter] Starting readout sequence\r\n");
+                    telnetServer.telnetPrint("[Meter] Starting readout sequence\r\n");
                     ESP_LOGI(TAG, "Starting readout sequence");
 
-                    self->identifier.clear();
-                    self->receiveBuffer.clear();
-                    self->lastReadingTimestamp = now;
-                    self->timestampSend = now;
+                    self->m_identifier.clear();
+                    self->m_receiveBuffer.clear();
+                    self->m_lastReadingTimestamp = now;
+                    self->m_timestampSend = now;
 
                     self->configureUart(300);
-                    self->currentState = MeterState::Wakeup;
+                    self->m_currentState = MeterState::Wakeup;
                 }
                 else
                 {
@@ -157,8 +157,8 @@ void MeterT550::meterTask(void *pvParameters)
             case MeterState::Wakeup:
             {
                 self->sendWakeup();
-                self->timestampSend = getMillis();
-                self->currentState = MeterState::ReadIdent;
+                self->m_timestampSend = getMillis();
+                self->m_currentState = MeterState::ReadIdent;
                 break;
             }
 
@@ -190,34 +190,34 @@ void MeterT550::readIdent()
     uint8_t ch;
     while (uart_read_bytes(uartPort, &ch, 1, 0) > 0)
     {
-        timestampSend = getMillis();
+        m_timestampSend = getMillis();
         char c = (char)ch;
 
         if (c == '\n')
         {
-            TelnetServer.telnetPrint("[Meter] Identification: " + identifier + "\r\n");
-            ESP_LOGI(TAG, "Identification received: %s", identifier.c_str());
+            telnetServer.telnetPrint("[Meter] Identification: " + m_identifier + "\r\n");
+            ESP_LOGI(TAG, "Identification received: %s", m_identifier.c_str());
 
             configureUart(19200);
-            timestampSend = getMillis();
-            currentState = MeterState::ReceivingData;
+            m_timestampSend = getMillis();
+            m_currentState = MeterState::ReceivingData;
             return;
         }
         else if (c != '\r')
         {
-            if (identifier.length() < 64)
+            if (m_identifier.length() < 64)
             {
-                identifier += c;
+                m_identifier += c;
             }
         }
     }
 
-    if ((getMillis() - timestampSend) > 5000)
+    if ((getMillis() - m_timestampSend) > 5000)
     {
-        TelnetServer.telnetPrint("[Meter] Timeout waiting for identification\r\n");
+        telnetServer.telnetPrint("[Meter] Timeout waiting for identification\r\n");
         ESP_LOGW(TAG, "Timeout waiting for identification");
-        currentState = MeterState::Idle;
-        identifier.clear();
+        m_currentState = MeterState::Idle;
+        m_identifier.clear();
     }
 }
 
@@ -226,33 +226,33 @@ void MeterT550::receiveMeterData()
     uint8_t ch;
     while (uart_read_bytes(uartPort, &ch, 1, 0) > 0)
     {
-        timestampSend = getMillis();
+        m_timestampSend = getMillis();
         char c = (char)ch;
 
         if (c == '\n')
         {
-            parseMeterLine(receiveBuffer);
-            receiveBuffer.clear();
+            parseMeterLine(m_receiveBuffer);
+            m_receiveBuffer.clear();
         }
         else if (c != '\r')
         {
-            if (receiveBuffer.length() < 512)
+            if (m_receiveBuffer.length() < 512)
             {
-                receiveBuffer += c;
+                m_receiveBuffer += c;
             }
             else
             {
-                receiveBuffer.clear();
+                m_receiveBuffer.clear();
             }
         }
     }
 
-    if ((getMillis() - timestampSend) > 2500)
+    if ((getMillis() - m_timestampSend) > 2500)
     {
-        TelnetServer.telnetPrint("[Meter] Readout complete\r\n");
+        telnetServer.telnetPrint("[Meter] Readout complete\r\n");
         ESP_LOGI(TAG, "Readout complete. Triggering MQTT publish");
-        currentState = MeterState::Idle;
-        receiveBuffer.clear();
+        m_currentState = MeterState::Idle;
+        m_receiveBuffer.clear();
         triggerMqttPublish();
     }
 }
@@ -291,7 +291,7 @@ void MeterT550::parseMeterLine(const std::string &line)
         if (!obisCode.empty() && !strValue.empty())
         {
             std::string logMsg = "[Parse] OBIS: " + obisCode + " | Value: " + strValue + "\r\n";
-            TelnetServer.telnetPrint(logMsg);
+            telnetServer.telnetPrint(logMsg);
             ESP_LOGI(TAG, "Parsed OBIS: %s = %s", obisCode.c_str(), strValue.c_str());
 
             addToDataset(obisCode, strValue);
@@ -334,8 +334,8 @@ void MeterT550::addToDataset(const std::string &obis, const std::string &value)
                 std::string cleanPart = cleanValue(partVal);
                 std::string key = cleanObis + "." + std::to_string(partIndex);
 
-                cJSON_DeleteItemFromObject(sensorDataJson, key.c_str());
-                cJSON_AddNumberToObject(sensorDataJson, key.c_str(), std::atof(cleanPart.c_str()));
+                cJSON_DeleteItemFromObject(m_sensorDataJson, key.c_str());
+                cJSON_AddNumberToObject(m_sensorDataJson, key.c_str(), std::atof(cleanPart.c_str()));
 
                 startPos = delimPos + 1;
                 delimPos = val.find('&', startPos);
@@ -346,28 +346,28 @@ void MeterT550::addToDataset(const std::string &obis, const std::string &value)
             std::string cleanPart = cleanValue(lastPart);
             std::string key = cleanObis + "." + std::to_string(partIndex);
 
-            cJSON_DeleteItemFromObject(sensorDataJson, key.c_str());
-            cJSON_AddNumberToObject(sensorDataJson, key.c_str(), std::atof(cleanPart.c_str()));
+            cJSON_DeleteItemFromObject(m_sensorDataJson, key.c_str());
+            cJSON_AddNumberToObject(m_sensorDataJson, key.c_str(), std::atof(cleanPart.c_str()));
             return;
         }
     }
 
     std::string cleanVal = cleanValue(val);
-    cJSON_DeleteItemFromObject(sensorDataJson, cleanObis.c_str());
+    cJSON_DeleteItemFromObject(m_sensorDataJson, cleanObis.c_str());
 
     if (isNumeric(cleanVal))
     {
-        cJSON_AddNumberToObject(sensorDataJson, cleanObis.c_str(), std::atof(cleanVal.c_str()));
+        cJSON_AddNumberToObject(m_sensorDataJson, cleanObis.c_str(), std::atof(cleanVal.c_str()));
     }
     else
     {
-        cJSON_AddStringToObject(sensorDataJson, cleanObis.c_str(), cleanVal.c_str());
+        cJSON_AddStringToObject(m_sensorDataJson, cleanObis.c_str(), cleanVal.c_str());
     }
 }
 
 void MeterT550::forceReading()
 {
-    lastReadingTimestamp = 0;
+    m_lastReadingTimestamp = 0;
 }
 
 void MeterT550::simulateData(const std::string &line)
@@ -377,14 +377,14 @@ void MeterT550::simulateData(const std::string &line)
 
 cJSON *MeterT550::getJsonData()
 {
-    return sensorDataJson;
+    return m_sensorDataJson;
 }
 
 void MeterT550::clearJsonData()
 {
-    if (sensorDataJson != nullptr)
+    if (m_sensorDataJson != nullptr)
     {
-        cJSON_Delete(sensorDataJson);
-        sensorDataJson = cJSON_CreateObject();
+        cJSON_Delete(m_sensorDataJson);
+        m_sensorDataJson = cJSON_CreateObject();
     }
 }

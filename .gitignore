@@ -22,6 +22,10 @@ sdkconfig.*
 platformio_local.ini
 *.local.ini
 *secrets*
+.agents/*.local.*
+.agents/local.md
+.agents/private.md
+.gemini/
 
 # Log files
 *.log

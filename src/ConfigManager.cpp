@@ -42,19 +42,19 @@ void ConfigManager::loadConfig()
         return;
     }
 
-    readNvsString(nvsHandle, "wifiSsid", wifiSsid);
-    readNvsString(nvsHandle, "wifiPass", wifiPassword);
-    readNvsString(nvsHandle, "mqttSrv", mqttServer);
-    nvs_get_u16(nvsHandle, "mqttPort", &mqttPort);
-    readNvsString(nvsHandle, "mqttUsr", mqttUser);
-    readNvsString(nvsHandle, "mqttPass", mqttPassword);
-    readNvsString(nvsHandle, "mqttTopic", mqttTopic);
-    nvs_get_u32(nvsHandle, "interval", &readIntervalSeconds);
+    readNvsString(nvsHandle, "wifiSsid", m_wifiSsid);
+    readNvsString(nvsHandle, "wifiPass", m_wifiPassword);
+    readNvsString(nvsHandle, "mqttSrv", m_mqttServer);
+    nvs_get_u16(nvsHandle, "mqttPort", &m_mqttPort);
+    readNvsString(nvsHandle, "mqttUsr", m_mqttUser);
+    readNvsString(nvsHandle, "mqttPass", m_mqttPassword);
+    readNvsString(nvsHandle, "mqttTopic", m_mqttTopic);
+    nvs_get_u32(nvsHandle, "interval", &m_readIntervalSeconds);
 
     uint8_t dummyVal = 0;
     if (nvs_get_u8(nvsHandle, "dummyMode", &dummyVal) == ESP_OK)
     {
-        dummyMode = (dummyVal != 0);
+        m_dummyMode = (dummyVal != 0);
     }
 
     nvs_close(nvsHandle);
@@ -71,15 +71,15 @@ void ConfigManager::saveConfig()
         return;
     }
 
-    nvs_set_str(nvsHandle, "wifiSsid", wifiSsid.c_str());
-    nvs_set_str(nvsHandle, "wifiPass", wifiPassword.c_str());
-    nvs_set_str(nvsHandle, "mqttSrv", mqttServer.c_str());
-    nvs_set_u16(nvsHandle, "mqttPort", mqttPort);
-    nvs_set_str(nvsHandle, "mqttUsr", mqttUser.c_str());
-    nvs_set_str(nvsHandle, "mqttPass", mqttPassword.c_str());
-    nvs_set_str(nvsHandle, "mqttTopic", mqttTopic.c_str());
-    nvs_set_u32(nvsHandle, "interval", readIntervalSeconds);
-    nvs_set_u8(nvsHandle, "dummyMode", dummyMode ? 1 : 0);
+    nvs_set_str(nvsHandle, "wifiSsid", m_wifiSsid.c_str());
+    nvs_set_str(nvsHandle, "wifiPass", m_wifiPassword.c_str());
+    nvs_set_str(nvsHandle, "mqttSrv", m_mqttServer.c_str());
+    nvs_set_u16(nvsHandle, "mqttPort", m_mqttPort);
+    nvs_set_str(nvsHandle, "mqttUsr", m_mqttUser.c_str());
+    nvs_set_str(nvsHandle, "mqttPass", m_mqttPassword.c_str());
+    nvs_set_str(nvsHandle, "mqttTopic", m_mqttTopic.c_str());
+    nvs_set_u32(nvsHandle, "interval", m_readIntervalSeconds);
+    nvs_set_u8(nvsHandle, "dummyMode", m_dummyMode ? 1 : 0);
 
     err = nvs_commit(nvsHandle);
     if (err != ESP_OK)

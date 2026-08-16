@@ -13,8 +13,8 @@
 #include <cstdlib>
 
 static const char *TAG = "WebServer";
-extern ConfigManager ConfigManager;
-extern TelnetServer TelnetServer;
+extern ConfigManager configManager;
+extern TelnetServer telnetServer;
 
 static std::string pendingPullUrl = "";
 
@@ -77,7 +77,7 @@ void WebServer::restartTask(void *pvParameters)
 void WebServer::pullUpdateTask(void *pvParameters)
 {
     ESP_LOGI(TAG, "Starting Pull-OTA download from: %s", pendingPullUrl.c_str());
-    TelnetServer.telnetPrint("[OTA] Starting remote download from URL...\r\n");
+    telnetServer.telnetPrint("[OTA] Starting remote download from URL...\r\n");
 
     esp_http_client_config_t httpConfig = {};
     httpConfig.url = pendingPullUrl.c_str();
@@ -88,7 +88,7 @@ void WebServer::pullUpdateTask(void *pvParameters)
     if (client == nullptr)
     {
         ESP_LOGE(TAG, "Failed to initialize HTTP client for OTA");
-        TelnetServer.telnetPrint("[OTA] Failed to init HTTP client\r\n");
+        telnetServer.telnetPrint("[OTA] Failed to init HTTP client\r\n");
         vTaskDelete(nullptr);
         return;
     }
@@ -97,19 +97,20 @@ void WebServer::pullUpdateTask(void *pvParameters)
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
-        TelnetServer.telnetPrint("[OTA] Failed to connect to server\r\n");
+        telnetServer.telnetPrint("[OTA] Failed to connect to server\r\n");
         esp_http_client_cleanup(client);
         vTaskDelete(nullptr);
         return;
     }
 
     int contentLength = esp_http_client_fetch_headers(client);
-    ESP_LOGI(TAG, "Firmware size from server: %d bytes", contentLength);
+    ESP_LOGI(TAG, "HTTP Server response header Content-Length = %d", contentLength);
 
     const esp_partition_t *updatePartition = esp_ota_get_next_update_partition(nullptr);
     if (updatePartition == nullptr)
     {
-        ESP_LOGE(TAG, "No OTA partition available");
+        ESP_LOGE(TAG, "Passive OTA partition not found");
+        esp_http_client_close(client);
         esp_http_client_cleanup(client);
         vTaskDelete(nullptr);
         return;
@@ -120,35 +121,39 @@ void WebServer::pullUpdateTask(void *pvParameters)
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
+        esp_http_client_close(client);
         esp_http_client_cleanup(client);
         vTaskDelete(nullptr);
         return;
     }
 
-    char rxBuffer[1024];
+    char buf[1024];
     int totalRead = 0;
 
     while (1)
     {
-        int readBytes = esp_http_client_read(client, rxBuffer, sizeof(rxBuffer));
+        int readBytes = esp_http_client_read(client, buf, sizeof(buf));
         if (readBytes < 0)
         {
-            ESP_LOGE(TAG, "HTTP read error during OTA");
+            ESP_LOGE(TAG, "Error during HTTP stream read");
             esp_ota_abort(otaHandle);
+            esp_http_client_close(client);
             esp_http_client_cleanup(client);
             vTaskDelete(nullptr);
             return;
         }
         else if (readBytes == 0)
         {
+            ESP_LOGI(TAG, "End of HTTP response stream reached");
             break;
         }
 
-        err = esp_ota_write(otaHandle, rxBuffer, readBytes);
+        err = esp_ota_write(otaHandle, buf, readBytes);
         if (err != ESP_OK)
         {
             ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(err));
             esp_ota_abort(otaHandle);
+            esp_http_client_close(client);
             esp_http_client_cleanup(client);
             vTaskDelete(nullptr);
             return;
@@ -164,7 +169,7 @@ void WebServer::pullUpdateTask(void *pvParameters)
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(err));
-        TelnetServer.telnetPrint("[OTA] Image validation failed\r\n");
+        telnetServer.telnetPrint("[OTA] Image validation failed\r\n");
         vTaskDelete(nullptr);
         return;
     }
@@ -173,13 +178,13 @@ void WebServer::pullUpdateTask(void *pvParameters)
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
-        TelnetServer.telnetPrint("[OTA] Failed to set boot partition\r\n");
+        telnetServer.telnetPrint("[OTA] Failed to set boot partition\r\n");
         vTaskDelete(nullptr);
         return;
     }
 
     ESP_LOGI(TAG, "OTA successful (%d bytes written). Rebooting in 3 seconds...", totalRead);
-    TelnetServer.telnetPrint("[OTA] Update successful. Rebooting in 3 seconds...\r\n");
+    telnetServer.telnetPrint("[OTA] Update successful. Rebooting in 3 seconds...\r\n");
 
     xTaskCreate(&WebServer::restartTask, "restartTask", 2048, nullptr, 5, nullptr);
     vTaskDelete(nullptr);
@@ -215,23 +220,23 @@ esp_err_t WebServer::rootGetHandler(httpd_req_t *req)
   <h3>System Configuration</h3>
   <form action='/save' method='POST'>
     <label>WiFi SSID</label>
-    <input type='text' name='wifi_ssid' value=')" + ConfigManager.wifiSsid + R"('>
+    <input type='text' name='wifi_ssid' value=')" + configManager.m_wifiSsid + R"('>
     <label>WiFi Password</label>
-    <input type='password' name='wifi_pass' value=')" + ConfigManager.wifiPassword + R"('>
+    <input type='password' name='wifi_pass' value=')" + configManager.m_wifiPassword + R"('>
     <label>MQTT Broker (IP / Host)</label>
-    <input type='text' name='mqtt_server' value=')" + ConfigManager.mqttServer + R"('>
+    <input type='text' name='mqtt_server' value=')" + configManager.m_mqttServer + R"('>
     <label>MQTT Port</label>
-    <input type='number' name='mqtt_port' value=')" + std::to_string(ConfigManager.mqttPort) + R"('>
+    <input type='number' name='mqtt_port' value=')" + std::to_string(configManager.m_mqttPort) + R"('>
     <label>MQTT User</label>
-    <input type='text' name='mqtt_user' value=')" + ConfigManager.mqttUser + R"('>
+    <input type='text' name='mqtt_user' value=')" + configManager.m_mqttUser + R"('>
     <label>MQTT Password</label>
-    <input type='password' name='mqtt_pass' value=')" + ConfigManager.mqttPassword + R"('>
+    <input type='password' name='mqtt_pass' value=')" + configManager.m_mqttPassword + R"('>
     <label>MQTT State Topic</label>
-    <input type='text' name='mqtt_topic' value=')" + ConfigManager.mqttTopic + R"('>
+    <input type='text' name='mqtt_topic' value=')" + configManager.m_mqttTopic + R"('>
     <label>Read Interval (seconds)</label>
-    <input type='number' name='read_interval_s' value=')" + std::to_string(ConfigManager.readIntervalSeconds) + R"('>
+    <input type='number' name='read_interval_s' value=')" + std::to_string(configManager.m_readIntervalSeconds) + R"('>
     <label class='checkbox-label'>
-      <input type='checkbox' name='dummy_mode' value='1' )" + (ConfigManager.dummyMode ? "checked" : "") + R"(>
+      <input type='checkbox' name='dummy_mode' value='1' )" + (configManager.m_dummyMode ? "checked" : "") + R"(>
       Dummy Mode (Emulate data via Telnet)
     </label>
     <button type='submit'>Save Configuration & Restart</button>
@@ -305,20 +310,20 @@ esp_err_t WebServer::savePostHandler(httpd_req_t *req)
     std::map<std::string, std::string> params;
     parseFormBody(postBody, params);
 
-    if (params.find("wifi_ssid") != params.end()) ConfigManager.wifiSsid = params["wifi_ssid"];
-    if (params.find("wifi_pass") != params.end()) ConfigManager.wifiPassword = params["wifi_pass"];
-    if (params.find("mqtt_server") != params.end()) ConfigManager.mqttServer = params["mqtt_server"];
-    if (params.find("mqtt_port") != params.end()) ConfigManager.mqttPort = std::atoi(params["mqtt_port"].c_str());
-    if (params.find("mqtt_user") != params.end()) ConfigManager.mqttUser = params["mqtt_user"];
-    if (params.find("mqtt_pass") != params.end()) ConfigManager.mqttPassword = params["mqtt_pass"];
-    if (params.find("mqtt_topic") != params.end()) ConfigManager.mqttTopic = params["mqtt_topic"];
-    if (params.find("read_interval_s") != params.end()) ConfigManager.readIntervalSeconds = std::atoi(params["read_interval_s"].c_str());
+    if (params.find("wifi_ssid") != params.end()) configManager.m_wifiSsid = params["wifi_ssid"];
+    if (params.find("wifi_pass") != params.end()) configManager.m_wifiPassword = params["wifi_pass"];
+    if (params.find("mqtt_server") != params.end()) configManager.m_mqttServer = params["mqtt_server"];
+    if (params.find("mqtt_port") != params.end()) configManager.m_mqttPort = std::atoi(params["mqtt_port"].c_str());
+    if (params.find("mqtt_user") != params.end()) configManager.m_mqttUser = params["mqtt_user"];
+    if (params.find("mqtt_pass") != params.end()) configManager.m_mqttPassword = params["mqtt_pass"];
+    if (params.find("mqtt_topic") != params.end()) configManager.m_mqttTopic = params["mqtt_topic"];
+    if (params.find("read_interval_s") != params.end()) configManager.m_readIntervalSeconds = std::atoi(params["read_interval_s"].c_str());
 
-    ConfigManager.dummyMode = (params.find("dummy_mode") != params.end() && params["dummy_mode"] == "1");
+    configManager.m_dummyMode = (params.find("dummy_mode") != params.end() && params["dummy_mode"] == "1");
 
-    ConfigManager.saveConfig();
+    configManager.saveConfig();
 
-    TelnetServer.telnetPrint("[Web] Configuration saved via web interface\r\n");
+    telnetServer.telnetPrint("[Web] Configuration saved via web interface\r\n");
     ESP_LOGI(TAG, "Configuration updated via web interface. Scheduling reboot...");
 
     std::string response = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Saved</title></head><body>"
@@ -335,7 +340,7 @@ esp_err_t WebServer::savePostHandler(httpd_req_t *req)
 esp_err_t WebServer::updatePostHandler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "Push-OTA firmware upload started (%d bytes)", req->content_len);
-    TelnetServer.telnetPrint("[OTA] Push firmware upload started...\r\n");
+    telnetServer.telnetPrint("[OTA] Push firmware upload started...\r\n");
 
     const esp_partition_t *updatePartition = esp_ota_get_next_update_partition(nullptr);
     if (updatePartition == nullptr)
@@ -401,7 +406,7 @@ esp_err_t WebServer::updatePostHandler(httpd_req_t *req)
     }
 
     ESP_LOGI(TAG, "OTA flash completed successfully. Rebooting...");
-    TelnetServer.telnetPrint("[OTA] Push upload successful. Rebooting...\r\n");
+    telnetServer.telnetPrint("[OTA] Push upload successful. Rebooting...\r\n");
 
     httpd_resp_sendstr(req, "OK");
     xTaskCreate(&WebServer::restartTask, "restartTask", 2048, nullptr, 5, nullptr);
@@ -461,35 +466,35 @@ void WebServer::setup()
     config.max_uri_handlers = 8;
     config.stack_size = 8192;
 
-    if (httpd_start(&serverHandle, &config) == ESP_OK)
+    if (httpd_start(&m_serverHandle, &config) == ESP_OK)
     {
         httpd_uri_t rootUri = {
             .uri = "/",
             .method = HTTP_GET,
             .handler = &WebServer::rootGetHandler,
             .user_ctx = nullptr};
-        httpd_register_uri_handler(serverHandle, &rootUri);
+        httpd_register_uri_handler(m_serverHandle, &rootUri);
 
         httpd_uri_t saveUri = {
             .uri = "/save",
             .method = HTTP_POST,
             .handler = &WebServer::savePostHandler,
             .user_ctx = nullptr};
-        httpd_register_uri_handler(serverHandle, &saveUri);
+        httpd_register_uri_handler(m_serverHandle, &saveUri);
 
         httpd_uri_t updateUri = {
             .uri = "/update",
             .method = HTTP_POST,
             .handler = &WebServer::updatePostHandler,
             .user_ctx = nullptr};
-        httpd_register_uri_handler(serverHandle, &updateUri);
+        httpd_register_uri_handler(m_serverHandle, &updateUri);
 
         httpd_uri_t pullUpdateUri = {
             .uri = "/pull_update",
             .method = HTTP_POST,
             .handler = &WebServer::pullUpdatePostHandler,
             .user_ctx = nullptr};
-        httpd_register_uri_handler(serverHandle, &pullUpdateUri);
+        httpd_register_uri_handler(m_serverHandle, &pullUpdateUri);
 
         ESP_LOGI(TAG, "HTTP web server started on port 80 (with Push & Pull OTA)");
     }
@@ -501,10 +506,10 @@ void WebServer::setup()
 
 void WebServer::stop()
 {
-    if (serverHandle != nullptr)
+    if (m_serverHandle != nullptr)
     {
-        httpd_stop(serverHandle);
-        serverHandle = nullptr;
+        httpd_stop(m_serverHandle);
+        m_serverHandle = nullptr;
         ESP_LOGI(TAG, "HTTP web server stopped");
     }
 }

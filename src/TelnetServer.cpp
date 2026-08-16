@@ -29,7 +29,7 @@ void TelnetServer::setup()
         4096,
         this,
         5,
-        &taskHandle);
+        &m_taskHandle);
 
     ESP_LOGI(TAG, "Telnet server task started on port 23");
 }
@@ -45,8 +45,8 @@ void TelnetServer::telnetTask(void *pvParameters)
 
     while (1)
     {
-        self->serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-        if (self->serverSocket < 0)
+        self->m_serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+        if (self->m_serverSocket < 0)
         {
             ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
             vTaskDelay(pdMS_TO_TICKS(1000));
@@ -54,24 +54,24 @@ void TelnetServer::telnetTask(void *pvParameters)
         }
 
         int opt = 1;
-        setsockopt(self->serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        setsockopt(self->m_serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-        int err = bind(self->serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr));
+        int err = bind(self->m_serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr));
         if (err != 0)
         {
             ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
-            close(self->serverSocket);
-            self->serverSocket = -1;
+            close(self->m_serverSocket);
+            self->m_serverSocket = -1;
             vTaskDelay(pdMS_TO_TICKS(2000));
             continue;
         }
 
-        err = listen(self->serverSocket, 1);
+        err = listen(self->m_serverSocket, 1);
         if (err != 0)
         {
             ESP_LOGE(TAG, "Error occurred during listen: errno %d", errno);
-            close(self->serverSocket);
-            self->serverSocket = -1;
+            close(self->m_serverSocket);
+            self->m_serverSocket = -1;
             vTaskDelay(pdMS_TO_TICKS(2000));
             continue;
         }
@@ -82,7 +82,7 @@ void TelnetServer::telnetTask(void *pvParameters)
         {
             struct sockaddr_in sourceAddr;
             socklen_t addrLen = sizeof(sourceAddr);
-            int sock = accept(self->serverSocket, (struct sockaddr *)&sourceAddr, &addrLen);
+            int sock = accept(self->m_serverSocket, (struct sockaddr *)&sourceAddr, &addrLen);
 
             if (sock < 0)
             {
@@ -91,7 +91,7 @@ void TelnetServer::telnetTask(void *pvParameters)
             }
 
             // Only allow one active client at a time
-            if (self->clientSocket >= 0)
+            if (self->m_clientSocket >= 0)
             {
                 const char *busyMsg = "[Telnet] Server busy. Another client is connected.\r\n";
                 send(sock, busyMsg, strlen(busyMsg), 0);
@@ -99,15 +99,15 @@ void TelnetServer::telnetTask(void *pvParameters)
                 continue;
             }
 
-            self->clientSocket = sock;
+            self->m_clientSocket = sock;
             self->handleClient(sock);
-            self->clientSocket = -1;
+            self->m_clientSocket = -1;
         }
 
-        if (self->serverSocket >= 0)
+        if (self->m_serverSocket >= 0)
         {
-            close(self->serverSocket);
-            self->serverSocket = -1;
+            close(self->m_serverSocket);
+            self->m_serverSocket = -1;
         }
     }
 }
@@ -185,9 +185,9 @@ void TelnetServer::processLine(const std::string &line)
 
 void TelnetServer::telnetPrint(const char *msg)
 {
-    if (clientSocket >= 0 && msg != nullptr)
+    if (m_clientSocket >= 0 && msg != nullptr)
     {
-        send(clientSocket, msg, strlen(msg), 0);
+        send(m_clientSocket, msg, strlen(msg), 0);
     }
 }
 
@@ -198,5 +198,5 @@ void TelnetServer::telnetPrint(const std::string &msg)
 
 bool TelnetServer::hasClient() const
 {
-    return clientSocket >= 0;
+    return m_clientSocket >= 0;
 }
