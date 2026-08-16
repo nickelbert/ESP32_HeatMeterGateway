@@ -8,9 +8,9 @@
 class TelnetServer
 {
 private:
-    int serverSocket = -1;
-    int clientSocket = -1;
-    TaskHandle_t taskHandle = nullptr;
+    int m_serverSocket = -1;
+    int m_clientSocket = -1;
+    TaskHandle_t m_taskHandle = nullptr;
 
     static void telnetTask(void *pvParameters);
     void handleClient(int sock);

@@ -7,8 +7,8 @@
 class MqttHandler
 {
 private:
-    esp_mqtt_client_handle_t clientHandle = nullptr;
-    bool isConnectedState = false;
+    esp_mqtt_client_handle_t m_clientHandle = nullptr;
+    bool m_isConnectedState = false;
 
     static void mqttEventHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, void *eventData);
     void publishHaSensor(const std::string &obis, const std::string &name, const std::string &unit,

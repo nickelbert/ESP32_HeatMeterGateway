@@ -7,9 +7,9 @@
 #include <cstring>
 
 static const char *TAG = "MqttHandler";
-extern ConfigManager ConfigManager;
-extern TelnetServer TelnetServer;
-extern MeterT550 MeterT550;
+extern ConfigManager configManager;
+extern TelnetServer telnetServer;
+extern MeterT550 meterT550;
 
 static MqttHandler *mqttHandlerInstance = nullptr;
 
@@ -30,19 +30,19 @@ void MqttHandler::mqttEventHandler(void *handlerArgs, esp_event_base_t base, int
     {
         case MQTT_EVENT_CONNECTED:
         {
-            self->isConnectedState = true;
-            TelnetServer.telnetPrint("[MQTT] Connected to broker\r\n");
+            self->m_isConnectedState = true;
+            telnetServer.telnetPrint("[MQTT] Connected to broker\r\n");
             ESP_LOGI(TAG, "Connected to MQTT broker");
 
-            esp_mqtt_client_subscribe(self->clientHandle, "ultraheat/command", 0);
+            esp_mqtt_client_subscribe(self->m_clientHandle, "ultraheat/command", 0);
             self->sendHaAutoDiscovery();
             break;
         }
 
         case MQTT_EVENT_DISCONNECTED:
         {
-            self->isConnectedState = false;
-            TelnetServer.telnetPrint("[MQTT] Disconnected from broker\r\n");
+            self->m_isConnectedState = false;
+            telnetServer.telnetPrint("[MQTT] Disconnected from broker\r\n");
             ESP_LOGW(TAG, "Disconnected from MQTT broker");
             break;
         }
@@ -53,7 +53,7 @@ void MqttHandler::mqttEventHandler(void *handlerArgs, esp_event_base_t base, int
             std::string data(event->data, event->data_len);
 
             std::string logMsg = "[MQTT] Command received on " + topic + ": " + data + "\r\n";
-            TelnetServer.telnetPrint(logMsg);
+            telnetServer.telnetPrint(logMsg);
             ESP_LOGI(TAG, "Incoming MQTT message on topic %s: %s", topic.c_str(), data.c_str());
 
             std::string upperData = data;
@@ -61,9 +61,9 @@ void MqttHandler::mqttEventHandler(void *handlerArgs, esp_event_base_t base, int
 
             if (upperData == "READ")
             {
-                TelnetServer.telnetPrint("[MQTT] Triggering forced meter readout\r\n");
+                telnetServer.telnetPrint("[MQTT] Triggering forced meter readout\r\n");
                 ESP_LOGI(TAG, "Forced readout triggered via MQTT command");
-                MeterT550.forceReading();
+                meterT550.forceReading();
             }
             break;
         }
@@ -83,31 +83,31 @@ void MqttHandler::setup()
 {
     mqttHandlerInstance = this;
 
-    if (ConfigManager.mqttServer.empty())
+    if (configManager.m_mqttServer.empty())
     {
         ESP_LOGW(TAG, "No MQTT broker configured");
         return;
     }
 
-    std::string brokerUri = "mqtt://" + ConfigManager.mqttServer + ":" + std::to_string(ConfigManager.mqttPort);
+    std::string brokerUri = "mqtt://" + configManager.m_mqttServer + ":" + std::to_string(configManager.m_mqttPort);
 
     esp_mqtt_client_config_t mqttCfg = {};
     mqttCfg.broker.address.uri = brokerUri.c_str();
 
-    if (!ConfigManager.mqttUser.empty())
+    if (!configManager.m_mqttUser.empty())
     {
-        mqttCfg.credentials.username = ConfigManager.mqttUser.c_str();
-        mqttCfg.credentials.authentication.password = ConfigManager.mqttPassword.c_str();
+        mqttCfg.credentials.username = configManager.m_mqttUser.c_str();
+        mqttCfg.credentials.authentication.password = configManager.m_mqttPassword.c_str();
     }
 
     mqttCfg.credentials.client_id = "T550_Waermezaehler_C3";
     mqttCfg.buffer.size = 3072;
 
-    clientHandle = esp_mqtt_client_init(&mqttCfg);
-    if (clientHandle != nullptr)
+    m_clientHandle = esp_mqtt_client_init(&mqttCfg);
+    if (m_clientHandle != nullptr)
     {
-        esp_mqtt_client_register_event(clientHandle, MQTT_EVENT_ANY, &MqttHandler::mqttEventHandler, this);
-        esp_mqtt_client_start(clientHandle);
+        esp_mqtt_client_register_event(m_clientHandle, MQTT_EVENT_ANY, &MqttHandler::mqttEventHandler, this);
+        esp_mqtt_client_start(m_clientHandle);
         ESP_LOGI(TAG, "MQTT client started (Broker: %s)", brokerUri.c_str());
     }
     else
@@ -127,7 +127,7 @@ void MqttHandler::publishHaSensor(const std::string &obis, const std::string &na
 
     cJSON *doc = cJSON_CreateObject();
     cJSON_AddStringToObject(doc, "name", name.c_str());
-    cJSON_AddStringToObject(doc, "state_topic", ConfigManager.mqttTopic.c_str());
+    cJSON_AddStringToObject(doc, "state_topic", configManager.m_mqttTopic.c_str());
 
     std::string valueTemplate = "{{ value_json['" + obis + "'] }}";
     cJSON_AddStringToObject(doc, "value_template", valueTemplate.c_str());
@@ -152,7 +152,7 @@ void MqttHandler::publishHaSensor(const std::string &obis, const std::string &na
     char *payload = cJSON_PrintUnformatted(doc);
     if (payload != nullptr)
     {
-        esp_mqtt_client_publish(clientHandle, topic.c_str(), payload, 0, 1, 1);
+        esp_mqtt_client_publish(m_clientHandle, topic.c_str(), payload, 0, 1, 1);
         cJSON_free(payload);
     }
     cJSON_Delete(doc);
@@ -160,7 +160,7 @@ void MqttHandler::publishHaSensor(const std::string &obis, const std::string &na
 
 void MqttHandler::sendHaAutoDiscovery()
 {
-    TelnetServer.telnetPrint("[MQTT] Sending Home Assistant auto-discovery\r\n");
+    telnetServer.telnetPrint("[MQTT] Sending Home Assistant auto-discovery\r\n");
     ESP_LOGI(TAG, "Publishing Home Assistant auto-discovery entities");
 
     // 1. Current main readings
@@ -213,17 +213,17 @@ void MqttHandler::sendHaAutoDiscovery()
         "model": "Ultraheat T550"
     }
     })";
-    esp_mqtt_client_publish(clientHandle, topicButton, payloadButton, 0, 1, 1);
+    esp_mqtt_client_publish(m_clientHandle, topicButton, payloadButton, 0, 1, 1);
 
-    TelnetServer.telnetPrint("[MQTT] Auto-discovery published\r\n");
+    telnetServer.telnetPrint("[MQTT] Auto-discovery published\r\n");
 }
 
 void MqttHandler::sendState()
 {
-    cJSON *jsonData = MeterT550.getJsonData();
+    cJSON *jsonData = meterT550.getJsonData();
     if (jsonData == nullptr || cJSON_GetArraySize(jsonData) == 0)
     {
-        TelnetServer.telnetPrint("[MQTT] No sensor data to publish\r\n");
+        telnetServer.telnetPrint("[MQTT] No sensor data to publish\r\n");
         ESP_LOGW(TAG, "No sensor data to publish");
         return;
     }
@@ -231,21 +231,21 @@ void MqttHandler::sendState()
     char *jsonString = cJSON_PrintUnformatted(jsonData);
     if (jsonString != nullptr)
     {
-        TelnetServer.telnetPrint("[MQTT] Publishing state\r\n");
-        ESP_LOGI(TAG, "Publishing state to topic %s: %s", ConfigManager.mqttTopic.c_str(), jsonString);
+        telnetServer.telnetPrint("[MQTT] Publishing state\r\n");
+        ESP_LOGI(TAG, "Publishing state to topic %s: %s", configManager.m_mqttTopic.c_str(), jsonString);
 
-        if (clientHandle != nullptr && isConnectedState)
+        if (m_clientHandle != nullptr && m_isConnectedState)
         {
-            esp_mqtt_client_publish(clientHandle, ConfigManager.mqttTopic.c_str(), jsonString, 0, 0, 0);
+            esp_mqtt_client_publish(m_clientHandle, configManager.m_mqttTopic.c_str(), jsonString, 0, 0, 0);
         }
 
         cJSON_free(jsonString);
     }
 
-    MeterT550.clearJsonData();
+    meterT550.clearJsonData();
 }
 
 bool MqttHandler::isConnected() const
 {
-    return isConnectedState;
+    return m_isConnectedState;
 }

@@ -18,13 +18,13 @@ enum class MeterState
 class MeterT550
 {
 private:
-    MeterState currentState = MeterState::Idle;
-    uint32_t timestampSend = 0;
-    uint32_t lastReadingTimestamp = 0;
-    std::string identifier = "";
-    std::string receiveBuffer = "";
-    TaskHandle_t taskHandle = nullptr;
-    cJSON *sensorDataJson = nullptr;
+    MeterState m_currentState = MeterState::Idle;
+    uint32_t m_timestampSend = 0;
+    uint32_t m_lastReadingTimestamp = 0;
+    std::string m_identifier = "";
+    std::string m_receiveBuffer = "";
+    TaskHandle_t m_taskHandle = nullptr;
+    cJSON *m_sensorDataJson = nullptr;
 
     static const uart_port_t uartPort = UART_NUM_1;
     static const int rxPin = 20;
