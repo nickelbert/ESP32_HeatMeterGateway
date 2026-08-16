@@ -7,9 +7,6 @@
 static const char *TAG = "WifiManager";
 extern ConfigManager configManager;
 
-static int retryCount = 0;
-static const int maxRetryAttempts = 10;
-
 void WifiManager::eventHandler(void *arg, esp_event_base_t eventBase, int32_t eventId, void *eventData)
 {
     WifiManager *self = static_cast<WifiManager *>(arg);
@@ -18,53 +15,74 @@ void WifiManager::eventHandler(void *arg, esp_event_base_t eventBase, int32_t ev
     {
         if (eventId == WIFI_EVENT_STA_START)
         {
-            ESP_LOGI(TAG, "WiFi station started, connecting to AP...");
-            esp_wifi_connect();
+            if (!self->m_isApModeActive)
+            {
+                ESP_LOGI(TAG, "WiFi station started, connecting to AP...");
+                esp_wifi_connect();
+            }
+            else
+            {
+                ESP_LOGI(TAG, "WiFi station started in fallback APSTA mode");
+            }
         }
         else if (eventId == WIFI_EVENT_STA_DISCONNECTED)
         {
             self->m_isConnectedState = false;
             self->m_ipAddress = "";
 
-            if (retryCount < maxRetryAttempts)
+            if (!self->m_isApModeActive)
             {
-                retryCount++;
-                ESP_LOGW(TAG, "WiFi disconnected. Retrying connection (%d/%d)...", retryCount, maxRetryAttempts);
-                esp_wifi_connect();
+                if (self->m_retryCount < kMaxRetryAttempts)
+                {
+                    self->m_retryCount++;
+                    ESP_LOGW(TAG, "WiFi disconnected. Retrying connection (%d/%d)...", self->m_retryCount, kMaxRetryAttempts);
+                    esp_wifi_connect();
+                }
+                else
+                {
+                    ESP_LOGE(TAG, "WiFi connection failed after %d retries. Starting fallback AP mode...", kMaxRetryAttempts);
+                    self->startAccessPoint();
+                }
             }
             else
             {
-                ESP_LOGE(TAG, "WiFi connection failed after %d retries. Starting fallback AP mode...", maxRetryAttempts);
-                self->startAccessPoint();
+                ESP_LOGD(TAG, "STA disconnected while in fallback AP mode (normal when configured AP is unreachable)");
             }
         }
         else if (eventId == WIFI_EVENT_AP_STACONNECTED)
         {
-            wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *)eventData;
-            ESP_LOGI(TAG, "Client joined softAP (AID: %d)", event->aid);
+            wifi_event_ap_staconnected_t *event = static_cast<wifi_event_ap_staconnected_t *>(eventData);
+            self->m_apClientCount++;
+            ESP_LOGI(TAG, "Client joined softAP (AID: %d, Total Clients: %d)", event->aid, self->m_apClientCount);
         }
         else if (eventId == WIFI_EVENT_AP_STADISCONNECTED)
         {
-            wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)eventData;
-            ESP_LOGI(TAG, "Client left softAP (AID: %d)", event->aid);
+            wifi_event_ap_stadisconnected_t *event = static_cast<wifi_event_ap_stadisconnected_t *>(eventData);
+            if (self->m_apClientCount > 0)
+            {
+                self->m_apClientCount--;
+            }
+            ESP_LOGI(TAG, "Client left softAP (AID: %d, Total Clients: %d)", event->aid, self->m_apClientCount);
         }
     }
     else if (eventBase == IP_EVENT)
     {
         if (eventId == IP_EVENT_STA_GOT_IP)
         {
-            ip_event_got_ip_t *event = (ip_event_got_ip_t *)eventData;
+            ip_event_got_ip_t *event = static_cast<ip_event_got_ip_t *>(eventData);
             char ipBuf[16];
             esp_ip4addr_ntoa(&event->ip_info.ip, ipBuf, sizeof(ipBuf));
             self->m_isConnectedState = true;
             self->m_ipAddress = ipBuf;
-            retryCount = 0;
+            self->m_retryCount = 0;
             self->stopReconnectTimer();
+
             if (self->m_isApModeActive)
             {
                 ESP_LOGI(TAG, "Reconnected to home network! Disabling fallback AP...");
                 esp_wifi_set_mode(WIFI_MODE_STA);
                 self->m_isApModeActive = false;
+                self->m_apClientCount = 0;
             }
             ESP_LOGI(TAG, "WiFi connected! IP Address: %s", self->m_ipAddress.c_str());
         }
@@ -76,6 +94,14 @@ void WifiManager::reconnectTimerCallback(void *arg)
     WifiManager *self = static_cast<WifiManager *>(arg);
     if (!self->m_isConnectedState && !configManager.m_wifiSsid.empty())
     {
+        // When a client is connected to the SoftAP (e.g., user configuring via web UI),
+        // skip background STA scan because scanning other channels drops SoftAP beacons.
+        if (self->m_isApModeActive && self->m_apClientCount > 0)
+        {
+            ESP_LOGD(TAG, "Skipping background reconnect: Client is actively connected to SoftAP");
+            return;
+        }
+
         ESP_LOGI(TAG, "Background reconnect attempt to SSID: %s", configManager.m_wifiSsid.c_str());
         esp_wifi_connect();
     }
@@ -90,11 +116,11 @@ void WifiManager::startReconnectTimer()
         timerArgs.arg = this;
         timerArgs.name = "wifiReconnect";
         ESP_ERROR_CHECK(esp_timer_create(&timerArgs, &m_reconnectTimer));
-        // 15.000.000 microseconds
-        ESP_ERROR_CHECK(esp_timer_start_periodic(m_reconnectTimer, 15000000));
-        ESP_LOGI(TAG, "Background reconnect timer started (15s interval)");
+        ESP_ERROR_CHECK(esp_timer_start_periodic(m_reconnectTimer, kReconnectIntervalUs));
+        ESP_LOGI(TAG, "Background reconnect timer started (%llu s interval)", kReconnectIntervalUs / 1000000ULL);
     }
 }
+
 void WifiManager::stopReconnectTimer()
 {
     if (m_reconnectTimer != nullptr)
@@ -144,13 +170,14 @@ void WifiManager::setup()
 
 void WifiManager::startStation()
 {
+    stopReconnectTimer();
     m_isApModeActive = false;
     m_isConnectedState = false;
-    retryCount = 0;
+    m_retryCount = 0;
 
     wifi_config_t staConfig = {};
-    std::strncpy((char *)staConfig.sta.ssid, configManager.m_wifiSsid.c_str(), sizeof(staConfig.sta.ssid) - 1);
-    std::strncpy((char *)staConfig.sta.password, configManager.m_wifiPassword.c_str(), sizeof(staConfig.sta.password) - 1);
+    std::strncpy(reinterpret_cast<char *>(staConfig.sta.ssid), configManager.m_wifiSsid.c_str(), sizeof(staConfig.sta.ssid) - 1);
+    std::strncpy(reinterpret_cast<char *>(staConfig.sta.password), configManager.m_wifiPassword.c_str(), sizeof(staConfig.sta.password) - 1);
     staConfig.sta.threshold.authmode = configManager.m_wifiPassword.empty() ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
@@ -162,18 +189,27 @@ void WifiManager::startStation()
 
 void WifiManager::startAccessPoint()
 {
+    if (m_isApModeActive)
+    {
+        return;
+    }
+
     m_isApModeActive = true;
     m_isConnectedState = false;
+    m_retryCount = 0;
+    m_apClientCount = 0;
+
     wifi_config_t apConfig = {};
     const char *apSsid = "ESP-HeatMeter-Setup";
-    std::strncpy((char *)apConfig.ap.ssid, apSsid, sizeof(apConfig.ap.ssid) - 1);
+    std::strncpy(reinterpret_cast<char *>(apConfig.ap.ssid), apSsid, sizeof(apConfig.ap.ssid) - 1);
     apConfig.ap.ssid_len = std::strlen(apSsid);
     apConfig.ap.channel = 1;
     apConfig.ap.max_connection = 4;
     apConfig.ap.authmode = WIFI_AUTH_OPEN;
+    apConfig.ap.beacon_interval = 100;
+
     if (configManager.m_wifiSsid.empty())
     {
-        // Mode AP
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &apConfig));
         ESP_ERROR_CHECK(esp_wifi_start());
@@ -181,16 +217,16 @@ void WifiManager::startAccessPoint()
     }
     else
     {
-        // Dual-Mode AP STA
         wifi_config_t staConfig = {};
-        std::strncpy((char *)staConfig.sta.ssid, configManager.m_wifiSsid.c_str(), sizeof(staConfig.sta.ssid) - 1);
-        std::strncpy((char *)staConfig.sta.password, configManager.m_wifiPassword.c_str(), sizeof(staConfig.sta.password) - 1);
+        std::strncpy(reinterpret_cast<char *>(staConfig.sta.ssid), configManager.m_wifiSsid.c_str(), sizeof(staConfig.sta.ssid) - 1);
+        std::strncpy(reinterpret_cast<char *>(staConfig.sta.password), configManager.m_wifiPassword.c_str(), sizeof(staConfig.sta.password) - 1);
         staConfig.sta.threshold.authmode = configManager.m_wifiPassword.empty() ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
+
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &apConfig));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &staConfig));
         ESP_ERROR_CHECK(esp_wifi_start());
-        ESP_LOGI(TAG, "Fallback APSTA mode started: AP '%s' active, searching for '%s'", 
+        ESP_LOGI(TAG, "Fallback APSTA mode started: AP '%s' active (IP: 192.168.4.1), background search for '%s'", 
                  apSsid, configManager.m_wifiSsid.c_str());
         startReconnectTimer();
     }
@@ -206,7 +242,21 @@ bool WifiManager::isApMode() const
     return m_isApModeActive;
 }
 
+int WifiManager::getApClientCount() const
+{
+    return m_apClientCount;
+}
+
 std::string WifiManager::getIpAddress() const
 {
-    return m_ipAddress;
+    if (m_isConnectedState)
+    {
+        return m_ipAddress;
+    }
+    if (m_isApModeActive)
+    {
+        return "192.168.4.1";
+    }
+    return "";
 }
+

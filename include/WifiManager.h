@@ -9,8 +9,13 @@
 class WifiManager
 {
 private:
+    static constexpr int kMaxRetryAttempts = 10;
+    static constexpr uint64_t kReconnectIntervalUs = 60000000ULL; // 60 seconds
+
     bool m_isConnectedState = false;
     bool m_isApModeActive = false;
+    int m_retryCount = 0;
+    int m_apClientCount = 0;
     std::string m_ipAddress = "";
     esp_netif_t *m_staNetif = nullptr;
     esp_netif_t *m_apNetif = nullptr;
@@ -25,7 +30,9 @@ public:
     void setup();
     bool isConnected() const;
     bool isApMode() const;
+    int getApClientCount() const;
     std::string getIpAddress() const;
     void startAccessPoint();
     void startStation();
 };
+
