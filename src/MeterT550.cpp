@@ -95,10 +95,27 @@ void MeterT550::configureUart(uint32_t baudRate)
     ESP_ERROR_CHECK(uart_param_config(uartPort, &uartConfig));
 }
 
+MeterT550::MeterT550()
+{
+    m_sensorDataJson = cJSON_CreateObject();
+}
+
+MeterT550::~MeterT550()
+{
+    if (m_sensorDataJson != nullptr)
+    {
+        cJSON_Delete(m_sensorDataJson);
+        m_sensorDataJson = nullptr;
+    }
+}
+
 void MeterT550::setup()
 {
     meterInstance = this;
-    m_sensorDataJson = cJSON_CreateObject();
+    if (m_sensorDataJson == nullptr)
+    {
+        m_sensorDataJson = cJSON_CreateObject();
+    }
 
     ESP_ERROR_CHECK(uart_driver_install(uartPort, 1024, 0, 0, nullptr, 0));
     ESP_ERROR_CHECK(uart_set_pin(uartPort, txPin, rxPin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));

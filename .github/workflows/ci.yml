@@ -1,15 +1,18 @@
-name: CI Build
+name: CI - Build & Unit Tests
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
+      - master
   pull_request:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches:
+      - main
+      - master
 
 jobs:
-  build:
-    name: Build Firmware (esp32-c3)
+  unit-tests:
+    name: Run Native Unit Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -20,29 +23,53 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
-      - name: Cache PlatformIO packages and toolchains
+      - name: Cache PlatformIO packages
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.platformio
-            ~/.cache/pip
-          key: ${{ runner.os }}-platformio-${{ hashFiles('**/platformio.ini') }}
+          path: ~/.platformio
+          key: ${{ runner.os }}-pio-native-${{ hashFiles('**/platformio.ini') }}
           restore-keys: |
-            ${{ runner.os }}-platformio-
+            ${{ runner.os }}-pio-native-
 
-      - name: Install PlatformIO
+      - name: Install PlatformIO Core
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade platformio
 
-      - name: Run PlatformIO Build
-        run: pio run -e esp32-c3
+      - name: Run Native Unit Tests
+        run: |
+          pio test -e native -v
 
-      - name: Upload firmware binary
-        uses: actions/upload-artifact@v4
-        if: success()
+  build-esp32-c3:
+    name: Build ESP32-C3 Firmware
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          name: esp32-c3-firmware
-          path: .pio/build/esp32-c3/firmware.bin
-          if-no-files-found: warn
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: ${{ runner.os }}-pio-esp32-${{ hashFiles('**/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-esp32-
+
+      - name: Install PlatformIO Core
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade platformio
+
+      - name: Build ESP32-C3 Firmware
+        run: |
+          pio run -e esp32-c3
