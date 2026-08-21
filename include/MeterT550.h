@@ -40,6 +40,8 @@ private:
     static void meterTask(void *pvParameters);
 
 public:
+    MeterT550();
+    ~MeterT550();
     void setup();
     void forceReading();
     void simulateData(const std::string &line);
