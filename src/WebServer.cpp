@@ -122,7 +122,7 @@ static std::string resolveGitHubAssetUrl(const std::string &inputUrl, const std:
     std::getline(ss, actionKw, '/');
     std::getline(ss, tag, '/');
 
-    if (owner.empty() || repo.empty() || tag.empty())
+    if (owner.empty() || repo.empty())
     {
         return inputUrl;
     }
@@ -138,7 +138,17 @@ static std::string resolveGitHubAssetUrl(const std::string &inputUrl, const std:
         }
     }
 
-    std::string apiUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/releases/tags/" + tag;
+    std::string apiUrl;
+    if (actionKw == "latest" || inputUrl.find("/releases/latest") != std::string::npos)
+    {
+        apiUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/releases/latest";
+    }
+    else
+    {
+        if (tag.empty()) tag = actionKw;
+        apiUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/releases/tags/" + tag;
+    }
+
     ESP_LOGI(TAG, "Resolving GitHub release asset for '%s' via API: %s", targetBinName.c_str(), apiUrl.c_str());
 
     esp_http_client_config_t apiConfig = {};
