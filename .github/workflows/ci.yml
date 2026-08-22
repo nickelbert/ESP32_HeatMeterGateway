@@ -2,6 +2,9 @@ name: CI - Build & Unit Tests
 
 on:
   push:
+    branches:
+      - main
+      - master
   pull_request:
     branches:
       - main
