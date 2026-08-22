@@ -179,10 +179,14 @@ void WifiManager::startStation()
     std::strncpy(reinterpret_cast<char *>(staConfig.sta.ssid), configManager.m_wifiSsid.c_str(), sizeof(staConfig.sta.ssid) - 1);
     std::strncpy(reinterpret_cast<char *>(staConfig.sta.password), configManager.m_wifiPassword.c_str(), sizeof(staConfig.sta.password) - 1);
     staConfig.sta.threshold.authmode = configManager.m_wifiPassword.empty() ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
+    staConfig.sta.pmf_cfg.capable = true;
+    staConfig.sta.pmf_cfg.required = false;
+    staConfig.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &staConfig));
     ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
 
     ESP_LOGI(TAG, "Connecting to SSID: %s", configManager.m_wifiSsid.c_str());
 }
@@ -221,11 +225,15 @@ void WifiManager::startAccessPoint()
         std::strncpy(reinterpret_cast<char *>(staConfig.sta.ssid), configManager.m_wifiSsid.c_str(), sizeof(staConfig.sta.ssid) - 1);
         std::strncpy(reinterpret_cast<char *>(staConfig.sta.password), configManager.m_wifiPassword.c_str(), sizeof(staConfig.sta.password) - 1);
         staConfig.sta.threshold.authmode = configManager.m_wifiPassword.empty() ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
+        staConfig.sta.pmf_cfg.capable = true;
+        staConfig.sta.pmf_cfg.required = false;
+        staConfig.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
 
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &apConfig));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &staConfig));
         ESP_ERROR_CHECK(esp_wifi_start());
+        ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
         ESP_LOGI(TAG, "Fallback APSTA mode started: AP '%s' active (IP: 192.168.4.1), background search for '%s'", 
                  apSsid, configManager.m_wifiSsid.c_str());
         startReconnectTimer();

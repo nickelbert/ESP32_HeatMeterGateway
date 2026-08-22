@@ -8,7 +8,6 @@
 static const char *TAG = "TelnetServer";
 static TelnetServer *telnetServerInstance = nullptr;
 
-
 __attribute__((weak)) void triggerMqttPublish()
 {
     ESP_LOGI(TAG, "MQTT publish trigger requested via Telnet");
@@ -19,6 +18,20 @@ __attribute__((weak)) void triggerMeterSimulation(const std::string &line)
     ESP_LOGI(TAG, "Simulated meter data received via Telnet: %s", line.c_str());
 }
 
+TelnetServer::TelnetServer()
+{
+    m_socketMutex = xSemaphoreCreateMutex();
+}
+
+TelnetServer::~TelnetServer()
+{
+    if (m_socketMutex != nullptr)
+    {
+        vSemaphoreDelete(m_socketMutex);
+        m_socketMutex = nullptr;
+    }
+}
+
 void TelnetServer::setup()
 {
     telnetServerInstance = this;
@@ -26,7 +39,7 @@ void TelnetServer::setup()
     xTaskCreate(
         &TelnetServer::telnetTask,
         "telnetTask",
-        4096,
+        8192,
         this,
         5,
         &m_taskHandle);
@@ -48,7 +61,7 @@ void TelnetServer::telnetTask(void *pvParameters)
         self->m_serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
         if (self->m_serverSocket < 0)
         {
-            ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+            ESP_LOGE(TAG, "Unable to create socket: errno %d (%s)", errno, strerror(errno));
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
@@ -59,17 +72,17 @@ void TelnetServer::telnetTask(void *pvParameters)
         int err = bind(self->m_serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr));
         if (err != 0)
         {
-            ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+            ESP_LOGE(TAG, "Socket unable to bind: errno %d (%s)", errno, strerror(errno));
             close(self->m_serverSocket);
             self->m_serverSocket = -1;
             vTaskDelay(pdMS_TO_TICKS(2000));
             continue;
         }
 
-        err = listen(self->m_serverSocket, 1);
+        err = listen(self->m_serverSocket, 4);
         if (err != 0)
         {
-            ESP_LOGE(TAG, "Error occurred during listen: errno %d", errno);
+            ESP_LOGE(TAG, "Error occurred during listen: errno %d (%s)", errno, strerror(errno));
             close(self->m_serverSocket);
             self->m_serverSocket = -1;
             vTaskDelay(pdMS_TO_TICKS(2000));
@@ -86,22 +99,28 @@ void TelnetServer::telnetTask(void *pvParameters)
 
             if (sock < 0)
             {
-                ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
+                ESP_LOGE(TAG, "Unable to accept connection: errno %d (%s)", errno, strerror(errno));
                 break;
             }
 
-            // Only allow one active client at a time
-            if (self->m_clientSocket >= 0)
+            int noDelay = 1;
+            setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &noDelay, sizeof(noDelay));
+
+            if (self->m_socketMutex && xSemaphoreTake(self->m_socketMutex, portMAX_DELAY) == pdTRUE)
             {
-                const char *busyMsg = "[Telnet] Server busy. Another client is connected.\r\n";
-                send(sock, busyMsg, strlen(busyMsg), 0);
-                close(sock);
-                continue;
+                self->m_clientSocket = sock;
+                xSemaphoreGive(self->m_socketMutex);
             }
 
-            self->m_clientSocket = sock;
             self->handleClient(sock);
-            self->m_clientSocket = -1;
+
+            if (self->m_socketMutex && xSemaphoreTake(self->m_socketMutex, portMAX_DELAY) == pdTRUE)
+            {
+                self->m_clientSocket = -1;
+                xSemaphoreGive(self->m_socketMutex);
+            }
+
+            close(sock);
         }
 
         if (self->m_serverSocket >= 0)
@@ -114,10 +133,14 @@ void TelnetServer::telnetTask(void *pvParameters)
 
 void TelnetServer::handleClient(int sock)
 {
-    ESP_LOGI(TAG, "Client connected to Telnet server");
+    ESP_LOGI(TAG, "Client connected to Telnet server (socket fd: %d)", sock);
 
-    const char *welcomeMsg = "[Telnet] Connected to ESP Heat Meter (OTA Debug Mode)\r\n";
-    send(sock, welcomeMsg, strlen(welcomeMsg), 0);
+    const char *welcomeMsg = "\r\n==================================================\r\n"
+                             " Landis+Gyr T550 Heat Meter Gateway (Live Console)\r\n"
+                             " Commands: 'send' (publish MQTT), 'update' (OTA)\r\n"
+                             " Or paste OBIS strings: e.g. 6.8(0012.340*MWh)\r\n"
+                             "==================================================\r\n\r\n";
+    telnetPrint(welcomeMsg);
 
     char rxBuffer[256];
     std::string currentLine = "";
@@ -125,18 +148,47 @@ void TelnetServer::handleClient(int sock)
     while (1)
     {
         int len = recv(sock, rxBuffer, sizeof(rxBuffer) - 1, 0);
-        if (len <= 0)
+        if (len < 0)
         {
-            ESP_LOGI(TAG, "Telnet client disconnected");
+            ESP_LOGW(TAG, "Telnet recv error: errno %d (%s)", errno, strerror(errno));
+            break;
+        }
+        else if (len == 0)
+        {
+            ESP_LOGI(TAG, "Telnet client closed connection cleanly");
             break;
         }
 
         for (int i = 0; i < len; i++)
         {
-            char c = rxBuffer[i];
+            uint8_t c = static_cast<uint8_t>(rxBuffer[i]);
+
+            // Handle RFC 854 Telnet IAC command negotiation
+            if (c == 0xFF && (i + 2 < len))
+            {
+                uint8_t cmd = static_cast<uint8_t>(rxBuffer[i + 1]);
+                uint8_t opt = static_cast<uint8_t>(rxBuffer[i + 2]);
+
+                if (cmd == 0xFD) // DO -> Reply WONT (0xFC)
+                {
+                    uint8_t resp[3] = {0xFF, 0xFC, opt};
+                    send(sock, reinterpret_cast<const char *>(resp), 3, 0);
+                }
+                else if (cmd == 0xFB) // WILL -> Reply DONT (0xFE)
+                {
+                    uint8_t resp[3] = {0xFF, 0xFE, opt};
+                    send(sock, reinterpret_cast<const char *>(resp), 3, 0);
+                }
+                i += 2;
+                continue;
+            }
+            else if (c == 0xFF)
+            {
+                continue;
+            }
+
             if (c == '\n')
             {
-                // Trim trailing '\r'
                 if (!currentLine.empty() && currentLine.back() == '\r')
                 {
                     currentLine.pop_back();
@@ -148,17 +200,15 @@ void TelnetServer::handleClient(int sock)
                     currentLine.clear();
                 }
             }
-            else if (c != '\r')
+            else if (c != '\r' && ((c >= 32 && c <= 126) || c == '\t'))
             {
                 if (currentLine.length() < 512)
                 {
-                    currentLine += c;
+                    currentLine += static_cast<char>(c);
                 }
             }
         }
     }
-
-    close(sock);
 }
 
 void TelnetServer::processLine(const std::string &line)
@@ -185,9 +235,32 @@ void TelnetServer::processLine(const std::string &line)
 
 void TelnetServer::telnetPrint(const char *msg)
 {
-    if (m_clientSocket >= 0 && msg != nullptr)
+    if (msg == nullptr)
     {
-        send(m_clientSocket, msg, strlen(msg), 0);
+        return;
+    }
+
+    if (m_socketMutex != nullptr)
+    {
+        if (xSemaphoreTake(m_socketMutex, pdMS_TO_TICKS(200)) == pdTRUE)
+        {
+            if (m_clientSocket >= 0)
+            {
+                int totalSent = 0;
+                int msgLen = strlen(msg);
+                while (totalSent < msgLen && m_clientSocket >= 0)
+                {
+                    int sent = send(m_clientSocket, msg + totalSent, msgLen - totalSent, 0);
+                    if (sent <= 0)
+                    {
+                        ESP_LOGW(TAG, "Socket send failed (errno %d)", errno);
+                        break;
+                    }
+                    totalSent += sent;
+                }
+            }
+            xSemaphoreGive(m_socketMutex);
+        }
     }
 }
 

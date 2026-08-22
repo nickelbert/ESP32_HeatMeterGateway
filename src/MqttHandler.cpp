@@ -101,7 +101,8 @@ void MqttHandler::setup()
     }
 
     mqttCfg.credentials.client_id = "T550_Waermezaehler_C3";
-    mqttCfg.buffer.size = 3072;
+    mqttCfg.buffer.size = 4096;
+    mqttCfg.task.stack_size = 9216;
 
     m_clientHandle = esp_mqtt_client_init(&mqttCfg);
     if (m_clientHandle != nullptr)

@@ -57,6 +57,11 @@ typedef struct
     {
         size_t size;
     } buffer;
+    struct
+    {
+        size_t stack_size;
+        int prio;
+    } task;
 } esp_mqtt_client_config_t;
 
 struct PublishedMqttMessage
