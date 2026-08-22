@@ -1,3 +1,4 @@
+#include "sdkconfig.h"
 #include "WebServer.h"
 #include "ConfigManager.h"
 #include "TelnetServer.h"
@@ -80,12 +81,6 @@ void WebServer::restartTask(void *pvParameters)
     esp_restart();
 }
 
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
-static const char *TARGET_BIN_NAME = "firmware-esp32-s3.bin";
-#else
-static const char *TARGET_BIN_NAME = "firmware-esp32-c3.bin";
-#endif
-
 esp_err_t WebServer::httpClientInitCb(esp_http_client_handle_t http_client)
 {
     if (!pendingGithubToken.empty())
@@ -97,6 +92,12 @@ esp_err_t WebServer::httpClientInitCb(esp_http_client_handle_t http_client)
     }
     return ESP_OK;
 }
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+static const char *TARGET_BIN_NAME = "firmware-esp32-s3.bin";
+#else
+static const char *TARGET_BIN_NAME = "firmware-esp32-c3.bin";
+#endif
 
 static std::string resolveGitHubAssetUrl(const std::string &inputUrl, const std::string &token)
 {
@@ -126,8 +127,19 @@ static std::string resolveGitHubAssetUrl(const std::string &inputUrl, const std:
         return inputUrl;
     }
 
+    std::string targetBinName = TARGET_BIN_NAME;
+    if (inputUrl.find(".bin") != std::string::npos)
+    {
+        size_t lastSlash = inputUrl.rfind('/');
+        if (lastSlash != std::string::npos)
+        {
+            std::string fn = inputUrl.substr(lastSlash + 1);
+            if (!fn.empty()) targetBinName = fn;
+        }
+    }
+
     std::string apiUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/releases/tags/" + tag;
-    ESP_LOGI(TAG, "Resolving GitHub release asset for '%s' via API...", TARGET_BIN_NAME);
+    ESP_LOGI(TAG, "Resolving GitHub release asset for '%s' via API: %s", targetBinName.c_str(), apiUrl.c_str());
 
     esp_http_client_config_t apiConfig = {};
     apiConfig.url = apiUrl.c_str();
@@ -184,7 +196,7 @@ static std::string resolveGitHubAssetUrl(const std::string &inputUrl, const std:
 
                 if (cJSON_IsString(nameItem) && cJSON_IsString(urlItem))
                 {
-                    if (std::string(nameItem->valuestring) == TARGET_BIN_NAME)
+                    if (std::string(nameItem->valuestring) == targetBinName)
                     {
                         resolvedAssetUrl = urlItem->valuestring;
                         ESP_LOGI(TAG, "Auto-resolved asset URL: %s", resolvedAssetUrl.c_str());
