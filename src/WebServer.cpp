@@ -19,7 +19,8 @@ static const char *TAG = "WebServer";
 extern ConfigManager configManager;
 extern TelnetServer telnetServer;
 
-static std::string pendingPullUrl = "";
+std::string WebServer::pendingPullUrl = "";
+std::string WebServer::pendingGithubToken = "";
 
 static std::string urlDecode(const std::string &src)
 {
@@ -77,6 +78,17 @@ void WebServer::restartTask(void *pvParameters)
     esp_restart();
 }
 
+esp_err_t WebServer::httpClientInitCb(esp_http_client_handle_t http_client)
+{
+    if (!pendingGithubToken.empty())
+    {
+        std::string authHeader = "Bearer " + pendingGithubToken;
+        esp_http_client_set_header(http_client, "Authorization", authHeader.c_str());
+        esp_http_client_set_header(http_client, "User-Agent", "ESP32-HeatMeterGateway");
+    }
+    return ESP_OK;
+}
+
 void WebServer::pullUpdateTask(void *pvParameters)
 {
     ESP_LOGI(TAG, "Starting Pull-OTA download from: %s", pendingPullUrl.c_str());
@@ -93,6 +105,7 @@ void WebServer::pullUpdateTask(void *pvParameters)
 
     esp_https_ota_config_t otaConfig = {};
     otaConfig.http_config = &httpConfig;
+    otaConfig.http_client_init_cb = &WebServer::httpClientInitCb;
 
     esp_err_t ret = esp_https_ota(&otaConfig);
     if (ret == ESP_OK)
@@ -173,10 +186,12 @@ esp_err_t WebServer::rootGetHandler(httpd_req_t *req)
     <div class='info'>Uploads and flashes binary into the secondary partition.</div>
   </form>
 
-  <h3>Remote Update (Pull)</h3>
+  <h3>Firmware Update (Pull from URL)</h3>
   <form action='/pull_update' method='POST'>
-    <label>Firmware URL (HTTP)</label>
-    <input type='text' name='url' placeholder='http://192.168.1.50/firmware.bin'>
+    <label>Firmware URL</label>
+    <input type='text' name='url' placeholder='https://github.com/.../releases/download/.../firmware.bin'>
+    <label>GitHub Token (optional, für private Repositories)</label>
+    <input type='password' name='gh_token' placeholder='ghp_...'>
     <button type='submit' class='secondary'>Check & Pull Update</button>
   </form>
 </div>
@@ -364,9 +379,10 @@ esp_err_t WebServer::pullUpdatePostHandler(httpd_req_t *req)
     std::map<std::string, std::string> params;
     parseFormBody(postBody, params);
 
-    if (params.find("url") != params.end() && !params["url"].empty())
+       if (params.find("url") != params.end() && !params["url"].empty())
     {
         pendingPullUrl = params["url"];
+        pendingGithubToken = (params.find("gh_token") != params.end()) ? params["gh_token"] : "";
         ESP_LOGI(TAG, "Pull-OTA requested for URL: %s", pendingPullUrl.c_str());
 
         std::string response = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Updating</title></head><body>"
