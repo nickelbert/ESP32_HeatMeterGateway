@@ -3,6 +3,7 @@
 #include "TelnetServer.h"
 #include "MeterT550.h"
 #include "esp_log.h"
+#include "esp_app_desc.h"
 #include <algorithm>
 #include <cstring>
 
@@ -141,6 +142,8 @@ void MqttHandler::publishHaSensor(const std::string &obis, const std::string &na
     if (!stateClass.empty()) cJSON_AddStringToObject(doc, "state_class", stateClass.c_str());
     if (!icon.empty()) cJSON_AddStringToObject(doc, "icon", icon.c_str());
 
+    const esp_app_desc_t *appDesc = esp_app_get_description();
+
     cJSON *device = cJSON_CreateObject();
     cJSON *identifiers = cJSON_CreateArray();
     cJSON_AddItemToArray(identifiers, cJSON_CreateString("t550_meter"));
@@ -148,6 +151,7 @@ void MqttHandler::publishHaSensor(const std::string &obis, const std::string &na
     cJSON_AddStringToObject(device, "name", "Landis+Gyr T550");
     cJSON_AddStringToObject(device, "manufacturer", "Landis+Gyr");
     cJSON_AddStringToObject(device, "model", "Ultraheat T550");
+    cJSON_AddStringToObject(device, "sw_version", appDesc->version);
     cJSON_AddItemToObject(doc, "device", device);
 
     char *payload = cJSON_PrintUnformatted(doc);

@@ -5,6 +5,7 @@
 #include "esp_system.h"
 #include "esp_ota_ops.h"
 #include "esp_http_client.h"
+#include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <map>
@@ -195,6 +196,10 @@ esp_err_t WebServer::rootGetHandler(httpd_req_t *req)
     const esp_partition_t *running = esp_ota_get_running_partition();
     std::string runningSlot = (running != nullptr) ? running->label : "unknown";
 
+    const esp_app_desc_t *appDesc = esp_app_get_description();
+    std::string versionStr = std::string(appDesc->version);
+    std::string buildInfo = std::string(appDesc->date) + " " + std::string(appDesc->time);
+
     std::string html = R"(<!DOCTYPE html><html><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
 <title>Heat Meter Configuration</title>
@@ -215,7 +220,7 @@ esp_err_t WebServer::rootGetHandler(httpd_req_t *req)
 </head><body>
 <div class='card'>
   <h2>Landis+Gyr T550 Gateway</h2>
-  <div class='info'>Target: ESP32-C3 | Active Partition: <b>)" + runningSlot + R"(</b></div>
+  <div class='info'>Version: <b>)" + versionStr + R"(</b> | Built: <b>)" + buildInfo + R"(</b> | Active Partition: <b>)" + runningSlot + R"(</b></div>
 
   <h3>System Configuration</h3>
   <form action='/save' method='POST'>
