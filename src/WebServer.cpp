@@ -6,6 +6,8 @@
 #include "esp_ota_ops.h"
 #include "esp_http_client.h"
 #include "esp_app_desc.h"
+#include "esp_https_ota.h"
+#include "esp_crt_bundle.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <map>
@@ -82,112 +84,29 @@ void WebServer::pullUpdateTask(void *pvParameters)
 
     esp_http_client_config_t httpConfig = {};
     httpConfig.url = pendingPullUrl.c_str();
-    httpConfig.timeout_ms = 15000;
-    httpConfig.buffer_size = 2048;
+    httpConfig.timeout_ms = 30000;
+    httpConfig.buffer_size = 4096;
+    httpConfig.buffer_size_tx = 1024;
+    httpConfig.crt_bundle_attach = esp_crt_bundle_attach;
+    httpConfig.max_redirection_count = 5;
+    httpConfig.keep_alive_enable = true;
 
-    esp_http_client_handle_t client = esp_http_client_init(&httpConfig);
-    if (client == nullptr)
+    esp_https_ota_config_t otaConfig = {};
+    otaConfig.http_config = &httpConfig;
+
+    esp_err_t ret = esp_https_ota(&otaConfig);
+    if (ret == ESP_OK)
     {
-        ESP_LOGE(TAG, "Failed to initialize HTTP client for OTA");
-        telnetServer.telnetPrint("[OTA] Failed to init HTTP client\r\n");
-        vTaskDelete(nullptr);
-        return;
+        ESP_LOGI(TAG, "OTA update successful. Rebooting in 3 seconds...");
+        telnetServer.telnetPrint("[OTA] Update successful. Rebooting in 3 seconds...\r\n");
+        xTaskCreate(&WebServer::restartTask, "restartTask", 2048, nullptr, 5, nullptr);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "HTTPS OTA failed: %s", esp_err_to_name(ret));
+        telnetServer.telnetPrint("[OTA] HTTPS OTA failed\r\n");
     }
 
-    esp_err_t err = esp_http_client_open(client, 0);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
-        telnetServer.telnetPrint("[OTA] Failed to connect to server\r\n");
-        esp_http_client_cleanup(client);
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    int contentLength = esp_http_client_fetch_headers(client);
-    ESP_LOGI(TAG, "HTTP Server response header Content-Length = %d", contentLength);
-
-    const esp_partition_t *updatePartition = esp_ota_get_next_update_partition(nullptr);
-    if (updatePartition == nullptr)
-    {
-        ESP_LOGE(TAG, "Passive OTA partition not found");
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    esp_ota_handle_t otaHandle = 0;
-    err = esp_ota_begin(updatePartition, OTA_WITH_SEQUENTIAL_WRITES, &otaHandle);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    char buf[1024];
-    int totalRead = 0;
-
-    while (1)
-    {
-        int readBytes = esp_http_client_read(client, buf, sizeof(buf));
-        if (readBytes < 0)
-        {
-            ESP_LOGE(TAG, "Error during HTTP stream read");
-            esp_ota_abort(otaHandle);
-            esp_http_client_close(client);
-            esp_http_client_cleanup(client);
-            vTaskDelete(nullptr);
-            return;
-        }
-        else if (readBytes == 0)
-        {
-            ESP_LOGI(TAG, "End of HTTP response stream reached");
-            break;
-        }
-
-        err = esp_ota_write(otaHandle, buf, readBytes);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(err));
-            esp_ota_abort(otaHandle);
-            esp_http_client_close(client);
-            esp_http_client_cleanup(client);
-            vTaskDelete(nullptr);
-            return;
-        }
-
-        totalRead += readBytes;
-    }
-
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
-
-    err = esp_ota_end(otaHandle);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(err));
-        telnetServer.telnetPrint("[OTA] Image validation failed\r\n");
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    err = esp_ota_set_boot_partition(updatePartition);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
-        telnetServer.telnetPrint("[OTA] Failed to set boot partition\r\n");
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    ESP_LOGI(TAG, "OTA successful (%d bytes written). Rebooting in 3 seconds...", totalRead);
-    telnetServer.telnetPrint("[OTA] Update successful. Rebooting in 3 seconds...\r\n");
-
-    xTaskCreate(&WebServer::restartTask, "restartTask", 2048, nullptr, 5, nullptr);
     vTaskDelete(nullptr);
 }
 
