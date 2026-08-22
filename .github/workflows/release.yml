@@ -9,6 +9,8 @@ jobs:
   build-and-release:
     name: Build & Attach Firmware Binaries
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository with full git history
         uses: actions/checkout@v4
