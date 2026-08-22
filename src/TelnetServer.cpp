@@ -1,5 +1,6 @@
 #include "TelnetServer.h"
 #include "esp_log.h"
+#include "esp_app_desc.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 #include <cstring>
@@ -135,12 +136,17 @@ void TelnetServer::handleClient(int sock)
 {
     ESP_LOGI(TAG, "Client connected to Telnet server (socket fd: %d)", sock);
 
-    const char *welcomeMsg = "\r\n==================================================\r\n"
-                             " Landis+Gyr T550 Heat Meter Gateway (Live Console)\r\n"
+    const esp_app_desc_t *appDesc = esp_app_get_description();
+    // Send RFC 854 Telnet negotiation: WILL ECHO, WILL SUPPRESS GO AHEAD, DO SUPPRESS GO AHEAD
+    static const uint8_t telnetInit[] = {0xFF, 0xFB, 0x01, 0xFF, 0xFB, 0x03, 0xFF, 0xFD, 0x03};
+    send(sock, reinterpret_cast<const char *>(telnetInit), sizeof(telnetInit), 0);
+    std::string welcomeMsg = "\r\n==================================================\r\n"
+                             " Landis+Gyr T550 Heat Meter Gateway\r\n"
+                             " Version: " + std::string(appDesc->version) + " (" + appDesc->date + " " + appDesc->time + ")\r\n"
                              " Commands: 'send' (publish MQTT), 'update' (OTA)\r\n"
                              " Or paste OBIS strings: e.g. 6.8(0012.340*MWh)\r\n"
                              "==================================================\r\n\r\n";
-    telnetPrint(welcomeMsg);
+    telnetPrint(welcomeMsg.c_str());
 
     char rxBuffer[256];
     std::string currentLine = "";

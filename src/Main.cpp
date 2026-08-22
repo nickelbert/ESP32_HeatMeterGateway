@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_app_desc.h"
 #include "ConfigManager.h"
 #include "WifiManager.h"
 #include "TelnetServer.h"
@@ -20,8 +21,12 @@ MqttHandler mqttHandler;
 
 extern "C" void app_main(void)
 {
+    const esp_app_desc_t *appDesc = esp_app_get_description();
+
     ESP_LOGI(TAG, "==================================================");
-    ESP_LOGI(TAG, " Landis+Gyr T550 Gateway (ESP32-C3) starting... ");
+    ESP_LOGI(TAG, " Landis+Gyr T550 Gateway starting... ");
+    ESP_LOGI(TAG, " Firmware Version: %s (Built: %s %s)", appDesc->version, appDesc->date, appDesc->time);
+    ESP_LOGI(TAG, " ESP-IDF Version:  %s", appDesc->idf_ver);
     ESP_LOGI(TAG, "==================================================");
 
     configManager.setup();

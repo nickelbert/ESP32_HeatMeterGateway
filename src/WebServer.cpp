@@ -1,3 +1,4 @@
+#include "sdkconfig.h"
 #include "WebServer.h"
 #include "ConfigManager.h"
 #include "TelnetServer.h"
@@ -5,8 +6,13 @@
 #include "esp_system.h"
 #include "esp_ota_ops.h"
 #include "esp_http_client.h"
+#include "esp_app_desc.h"
+#include "esp_https_ota.h"
+#include "esp_crt_bundle.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "cJSON.h"
+#include <sstream>
 #include <map>
 #include <sstream>
 #include <cstring>
@@ -16,7 +22,8 @@ static const char *TAG = "WebServer";
 extern ConfigManager configManager;
 extern TelnetServer telnetServer;
 
-static std::string pendingPullUrl = "";
+std::string WebServer::pendingPullUrl = "";
+std::string WebServer::pendingGithubToken = "";
 
 static std::string urlDecode(const std::string &src)
 {
@@ -74,119 +81,172 @@ void WebServer::restartTask(void *pvParameters)
     esp_restart();
 }
 
+esp_err_t WebServer::httpClientInitCb(esp_http_client_handle_t http_client)
+{
+    if (!pendingGithubToken.empty())
+    {
+        std::string authHeader = "Bearer " + pendingGithubToken;
+        esp_http_client_set_header(http_client, "Authorization", authHeader.c_str());
+        esp_http_client_set_header(http_client, "Accept", "application/octet-stream");
+        esp_http_client_set_header(http_client, "User-Agent", "ESP32-HeatMeterGateway");
+    }
+    return ESP_OK;
+}
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+static const char *TARGET_BIN_NAME = "firmware-esp32-s3.bin";
+#else
+static const char *TARGET_BIN_NAME = "firmware-esp32-c3.bin";
+#endif
+
+static std::string resolveGitHubAssetUrl(const std::string &inputUrl, const std::string &token)
+{
+    if (token.empty() || inputUrl.find("github.com") == std::string::npos || inputUrl.find("api.github.com") != std::string::npos)
+    {
+        return inputUrl;
+    }
+
+    size_t ghPos = inputUrl.find("github.com/");
+    if (ghPos == std::string::npos)
+    {
+        return inputUrl;
+    }
+
+    std::string path = inputUrl.substr(ghPos + 11);
+    std::istringstream ss(path);
+    std::string owner, repo, releasesKw, actionKw, tag;
+
+    std::getline(ss, owner, '/');
+    std::getline(ss, repo, '/');
+    std::getline(ss, releasesKw, '/');
+    std::getline(ss, actionKw, '/');
+    std::getline(ss, tag, '/');
+
+    if (owner.empty() || repo.empty() || tag.empty())
+    {
+        return inputUrl;
+    }
+
+    std::string targetBinName = TARGET_BIN_NAME;
+    if (inputUrl.find(".bin") != std::string::npos)
+    {
+        size_t lastSlash = inputUrl.rfind('/');
+        if (lastSlash != std::string::npos)
+        {
+            std::string fn = inputUrl.substr(lastSlash + 1);
+            if (!fn.empty()) targetBinName = fn;
+        }
+    }
+
+    std::string apiUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/releases/tags/" + tag;
+    ESP_LOGI(TAG, "Resolving GitHub release asset for '%s' via API: %s", targetBinName.c_str(), apiUrl.c_str());
+
+    esp_http_client_config_t apiConfig = {};
+    apiConfig.url = apiUrl.c_str();
+    apiConfig.timeout_ms = 15000;
+    apiConfig.crt_bundle_attach = esp_crt_bundle_attach;
+    apiConfig.max_redirection_count = 5;
+
+    esp_http_client_handle_t apiClient = esp_http_client_init(&apiConfig);
+    if (apiClient == nullptr)
+    {
+        return inputUrl;
+    }
+
+    std::string authHeader = "Bearer " + token;
+    esp_http_client_set_header(apiClient, "Authorization", authHeader.c_str());
+    esp_http_client_set_header(apiClient, "User-Agent", "ESP32-HeatMeterGateway");
+    esp_http_client_set_header(apiClient, "Accept", "application/vnd.github.v3+json");
+
+    esp_err_t err = esp_http_client_open(apiClient, 0);
+    if (err != ESP_OK)
+    {
+        esp_http_client_cleanup(apiClient);
+        return inputUrl;
+    }
+
+    esp_http_client_fetch_headers(apiClient);
+
+    std::string responseBody;
+    char buf[512];
+    int readBytes = 0;
+    while ((readBytes = esp_http_client_read(apiClient, buf, sizeof(buf) - 1)) > 0)
+    {
+        buf[readBytes] = '\0';
+        responseBody += buf;
+        if (responseBody.length() > 65536) break;
+    }
+
+    esp_http_client_close(apiClient);
+    esp_http_client_cleanup(apiClient);
+
+    std::string resolvedAssetUrl = "";
+    cJSON *root = cJSON_Parse(responseBody.c_str());
+    if (root != nullptr)
+    {
+        cJSON *assets = cJSON_GetObjectItem(root, "assets");
+        if (cJSON_IsArray(assets))
+        {
+            int assetCount = cJSON_GetArraySize(assets);
+            for (int i = 0; i < assetCount; i++)
+            {
+                cJSON *asset = cJSON_GetArrayItem(assets, i);
+                cJSON *nameItem = cJSON_GetObjectItem(asset, "name");
+                cJSON *urlItem = cJSON_GetObjectItem(asset, "url");
+
+                if (cJSON_IsString(nameItem) && cJSON_IsString(urlItem))
+                {
+                    if (std::string(nameItem->valuestring) == targetBinName)
+                    {
+                        resolvedAssetUrl = urlItem->valuestring;
+                        ESP_LOGI(TAG, "Auto-resolved asset URL: %s", resolvedAssetUrl.c_str());
+                        break;
+                    }
+                }
+            }
+        }
+        cJSON_Delete(root);
+    }
+
+    return !resolvedAssetUrl.empty() ? resolvedAssetUrl : inputUrl;
+}
+
 void WebServer::pullUpdateTask(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Starting Pull-OTA download from: %s", pendingPullUrl.c_str());
+    ESP_LOGI(TAG, "Starting Pull-OTA process for: %s", pendingPullUrl.c_str());
+    telnetServer.telnetPrint("[OTA] Resolving GitHub release asset...\r\n");
+
+    std::string downloadUrl = resolveGitHubAssetUrl(pendingPullUrl, pendingGithubToken);
+    ESP_LOGI(TAG, "Final download target URL: %s", downloadUrl.c_str());
+
     telnetServer.telnetPrint("[OTA] Starting remote download from URL...\r\n");
 
     esp_http_client_config_t httpConfig = {};
-    httpConfig.url = pendingPullUrl.c_str();
-    httpConfig.timeout_ms = 15000;
-    httpConfig.buffer_size = 2048;
+    httpConfig.url = downloadUrl.c_str();
+    httpConfig.timeout_ms = 30000;
+    httpConfig.buffer_size = 4096;
+    httpConfig.buffer_size_tx = 1024;
+    httpConfig.crt_bundle_attach = esp_crt_bundle_attach;
+    httpConfig.max_redirection_count = 5;
+    httpConfig.keep_alive_enable = true;
 
-    esp_http_client_handle_t client = esp_http_client_init(&httpConfig);
-    if (client == nullptr)
+    esp_https_ota_config_t otaConfig = {};
+    otaConfig.http_config = &httpConfig;
+    otaConfig.http_client_init_cb = &WebServer::httpClientInitCb;
+
+    esp_err_t ret = esp_https_ota(&otaConfig);
+    if (ret == ESP_OK)
     {
-        ESP_LOGE(TAG, "Failed to initialize HTTP client for OTA");
-        telnetServer.telnetPrint("[OTA] Failed to init HTTP client\r\n");
-        vTaskDelete(nullptr);
-        return;
+        ESP_LOGI(TAG, "OTA update successful. Rebooting in 3 seconds...");
+        telnetServer.telnetPrint("[OTA] Update successful. Rebooting in 3 seconds...\r\n");
+        xTaskCreate(&WebServer::restartTask, "restartTask", 2048, nullptr, 5, nullptr);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "HTTPS OTA failed: %s", esp_err_to_name(ret));
+        telnetServer.telnetPrint("[OTA] HTTPS OTA failed\r\n");
     }
 
-    esp_err_t err = esp_http_client_open(client, 0);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
-        telnetServer.telnetPrint("[OTA] Failed to connect to server\r\n");
-        esp_http_client_cleanup(client);
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    int contentLength = esp_http_client_fetch_headers(client);
-    ESP_LOGI(TAG, "HTTP Server response header Content-Length = %d", contentLength);
-
-    const esp_partition_t *updatePartition = esp_ota_get_next_update_partition(nullptr);
-    if (updatePartition == nullptr)
-    {
-        ESP_LOGE(TAG, "Passive OTA partition not found");
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    esp_ota_handle_t otaHandle = 0;
-    err = esp_ota_begin(updatePartition, OTA_WITH_SEQUENTIAL_WRITES, &otaHandle);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    char buf[1024];
-    int totalRead = 0;
-
-    while (1)
-    {
-        int readBytes = esp_http_client_read(client, buf, sizeof(buf));
-        if (readBytes < 0)
-        {
-            ESP_LOGE(TAG, "Error during HTTP stream read");
-            esp_ota_abort(otaHandle);
-            esp_http_client_close(client);
-            esp_http_client_cleanup(client);
-            vTaskDelete(nullptr);
-            return;
-        }
-        else if (readBytes == 0)
-        {
-            ESP_LOGI(TAG, "End of HTTP response stream reached");
-            break;
-        }
-
-        err = esp_ota_write(otaHandle, buf, readBytes);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(err));
-            esp_ota_abort(otaHandle);
-            esp_http_client_close(client);
-            esp_http_client_cleanup(client);
-            vTaskDelete(nullptr);
-            return;
-        }
-
-        totalRead += readBytes;
-    }
-
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
-
-    err = esp_ota_end(otaHandle);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(err));
-        telnetServer.telnetPrint("[OTA] Image validation failed\r\n");
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    err = esp_ota_set_boot_partition(updatePartition);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
-        telnetServer.telnetPrint("[OTA] Failed to set boot partition\r\n");
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    ESP_LOGI(TAG, "OTA successful (%d bytes written). Rebooting in 3 seconds...", totalRead);
-    telnetServer.telnetPrint("[OTA] Update successful. Rebooting in 3 seconds...\r\n");
-
-    xTaskCreate(&WebServer::restartTask, "restartTask", 2048, nullptr, 5, nullptr);
     vTaskDelete(nullptr);
 }
 
@@ -194,6 +254,10 @@ esp_err_t WebServer::rootGetHandler(httpd_req_t *req)
 {
     const esp_partition_t *running = esp_ota_get_running_partition();
     std::string runningSlot = (running != nullptr) ? running->label : "unknown";
+
+    const esp_app_desc_t *appDesc = esp_app_get_description();
+    std::string versionStr = std::string(appDesc->version);
+    std::string buildInfo = std::string(appDesc->date) + " " + std::string(appDesc->time);
 
     std::string html = R"(<!DOCTYPE html><html><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
@@ -215,7 +279,7 @@ esp_err_t WebServer::rootGetHandler(httpd_req_t *req)
 </head><body>
 <div class='card'>
   <h2>Landis+Gyr T550 Gateway</h2>
-  <div class='info'>Target: ESP32-C3 | Active Partition: <b>)" + runningSlot + R"(</b></div>
+  <div class='info'>Version: <b>)" + versionStr + R"(</b> | Built: <b>)" + buildInfo + R"(</b> | Active Partition: <b>)" + runningSlot + R"(</b></div>
 
   <h3>System Configuration</h3>
   <form action='/save' method='POST'>
@@ -249,10 +313,12 @@ esp_err_t WebServer::rootGetHandler(httpd_req_t *req)
     <div class='info'>Uploads and flashes binary into the secondary partition.</div>
   </form>
 
-  <h3>Remote Update (Pull)</h3>
+  <h3>Firmware Update (Pull from URL)</h3>
   <form action='/pull_update' method='POST'>
-    <label>Firmware URL (HTTP)</label>
-    <input type='text' name='url' placeholder='http://192.168.1.50/firmware.bin'>
+    <label>Firmware URL</label>
+    <input type='text' name='url' placeholder='https://github.com/.../releases/download/.../firmware.bin'>
+    <label>GitHub Token (optional, für private Repositories)</label>
+    <input type='password' name='gh_token' placeholder='ghp_...'>
     <button type='submit' class='secondary'>Check & Pull Update</button>
   </form>
 </div>
@@ -440,9 +506,10 @@ esp_err_t WebServer::pullUpdatePostHandler(httpd_req_t *req)
     std::map<std::string, std::string> params;
     parseFormBody(postBody, params);
 
-    if (params.find("url") != params.end() && !params["url"].empty())
+       if (params.find("url") != params.end() && !params["url"].empty())
     {
         pendingPullUrl = params["url"];
+        pendingGithubToken = (params.find("gh_token") != params.end()) ? params["gh_token"] : "";
         ESP_LOGI(TAG, "Pull-OTA requested for URL: %s", pendingPullUrl.c_str());
 
         std::string response = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Updating</title></head><body>"
