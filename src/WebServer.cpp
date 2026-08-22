@@ -10,6 +10,8 @@
 #include "esp_crt_bundle.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "cJSON.h"
+#include <sstream>
 #include <map>
 #include <sstream>
 #include <cstring>
@@ -78,24 +80,137 @@ void WebServer::restartTask(void *pvParameters)
     esp_restart();
 }
 
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+static const char *TARGET_BIN_NAME = "firmware-esp32-s3.bin";
+#else
+static const char *TARGET_BIN_NAME = "firmware-esp32-c3.bin";
+#endif
+
 esp_err_t WebServer::httpClientInitCb(esp_http_client_handle_t http_client)
 {
     if (!pendingGithubToken.empty())
     {
         std::string authHeader = "Bearer " + pendingGithubToken;
         esp_http_client_set_header(http_client, "Authorization", authHeader.c_str());
+        esp_http_client_set_header(http_client, "Accept", "application/octet-stream");
         esp_http_client_set_header(http_client, "User-Agent", "ESP32-HeatMeterGateway");
     }
     return ESP_OK;
 }
 
+static std::string resolveGitHubAssetUrl(const std::string &inputUrl, const std::string &token)
+{
+    if (token.empty() || inputUrl.find("github.com") == std::string::npos || inputUrl.find("api.github.com") != std::string::npos)
+    {
+        return inputUrl;
+    }
+
+    size_t ghPos = inputUrl.find("github.com/");
+    if (ghPos == std::string::npos)
+    {
+        return inputUrl;
+    }
+
+    std::string path = inputUrl.substr(ghPos + 11);
+    std::istringstream ss(path);
+    std::string owner, repo, releasesKw, actionKw, tag;
+
+    std::getline(ss, owner, '/');
+    std::getline(ss, repo, '/');
+    std::getline(ss, releasesKw, '/');
+    std::getline(ss, actionKw, '/');
+    std::getline(ss, tag, '/');
+
+    if (owner.empty() || repo.empty() || tag.empty())
+    {
+        return inputUrl;
+    }
+
+    std::string apiUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/releases/tags/" + tag;
+    ESP_LOGI(TAG, "Resolving GitHub release asset for '%s' via API...", TARGET_BIN_NAME);
+
+    esp_http_client_config_t apiConfig = {};
+    apiConfig.url = apiUrl.c_str();
+    apiConfig.timeout_ms = 15000;
+    apiConfig.crt_bundle_attach = esp_crt_bundle_attach;
+    apiConfig.max_redirection_count = 5;
+
+    esp_http_client_handle_t apiClient = esp_http_client_init(&apiConfig);
+    if (apiClient == nullptr)
+    {
+        return inputUrl;
+    }
+
+    std::string authHeader = "Bearer " + token;
+    esp_http_client_set_header(apiClient, "Authorization", authHeader.c_str());
+    esp_http_client_set_header(apiClient, "User-Agent", "ESP32-HeatMeterGateway");
+    esp_http_client_set_header(apiClient, "Accept", "application/vnd.github.v3+json");
+
+    esp_err_t err = esp_http_client_open(apiClient, 0);
+    if (err != ESP_OK)
+    {
+        esp_http_client_cleanup(apiClient);
+        return inputUrl;
+    }
+
+    esp_http_client_fetch_headers(apiClient);
+
+    std::string responseBody;
+    char buf[512];
+    int readBytes = 0;
+    while ((readBytes = esp_http_client_read(apiClient, buf, sizeof(buf) - 1)) > 0)
+    {
+        buf[readBytes] = '\0';
+        responseBody += buf;
+        if (responseBody.length() > 65536) break;
+    }
+
+    esp_http_client_close(apiClient);
+    esp_http_client_cleanup(apiClient);
+
+    std::string resolvedAssetUrl = "";
+    cJSON *root = cJSON_Parse(responseBody.c_str());
+    if (root != nullptr)
+    {
+        cJSON *assets = cJSON_GetObjectItem(root, "assets");
+        if (cJSON_IsArray(assets))
+        {
+            int assetCount = cJSON_GetArraySize(assets);
+            for (int i = 0; i < assetCount; i++)
+            {
+                cJSON *asset = cJSON_GetArrayItem(assets, i);
+                cJSON *nameItem = cJSON_GetObjectItem(asset, "name");
+                cJSON *urlItem = cJSON_GetObjectItem(asset, "url");
+
+                if (cJSON_IsString(nameItem) && cJSON_IsString(urlItem))
+                {
+                    if (std::string(nameItem->valuestring) == TARGET_BIN_NAME)
+                    {
+                        resolvedAssetUrl = urlItem->valuestring;
+                        ESP_LOGI(TAG, "Auto-resolved asset URL: %s", resolvedAssetUrl.c_str());
+                        break;
+                    }
+                }
+            }
+        }
+        cJSON_Delete(root);
+    }
+
+    return !resolvedAssetUrl.empty() ? resolvedAssetUrl : inputUrl;
+}
+
 void WebServer::pullUpdateTask(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Starting Pull-OTA download from: %s", pendingPullUrl.c_str());
+    ESP_LOGI(TAG, "Starting Pull-OTA process for: %s", pendingPullUrl.c_str());
+    telnetServer.telnetPrint("[OTA] Resolving GitHub release asset...\r\n");
+
+    std::string downloadUrl = resolveGitHubAssetUrl(pendingPullUrl, pendingGithubToken);
+    ESP_LOGI(TAG, "Final download target URL: %s", downloadUrl.c_str());
+
     telnetServer.telnetPrint("[OTA] Starting remote download from URL...\r\n");
 
     esp_http_client_config_t httpConfig = {};
-    httpConfig.url = pendingPullUrl.c_str();
+    httpConfig.url = downloadUrl.c_str();
     httpConfig.timeout_ms = 30000;
     httpConfig.buffer_size = 4096;
     httpConfig.buffer_size_tx = 1024;
