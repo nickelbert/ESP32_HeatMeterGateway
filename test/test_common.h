@@ -5,6 +5,14 @@
 #include "TelnetServer.h"
 #include "ConfigManager.h"
 
+inline TelnetServer::TelnetServer()
+{
+}
+
+inline TelnetServer::~TelnetServer()
+{
+}
+
 inline void TelnetServer::setup()
 {
 }

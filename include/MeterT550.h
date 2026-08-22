@@ -15,6 +15,16 @@ enum class MeterState
     ReceivingData
 };
 
+#ifndef IR_RX_PIN
+#if CONFIG_IDF_TARGET_ESP32S3
+#define IR_RX_PIN 18
+#define IR_TX_PIN 17
+#else
+#define IR_RX_PIN 20
+#define IR_TX_PIN 21
+#endif
+#endif
+
 class MeterT550
 {
 private:
@@ -27,8 +37,8 @@ private:
     cJSON *m_sensorDataJson = nullptr;
 
     static const uart_port_t uartPort = UART_NUM_1;
-    static const int rxPin = 20;
-    static const int txPin = 21;
+    static const int rxPin = IR_RX_PIN;
+    static const int txPin = IR_TX_PIN;
 
     void configureUart(uint32_t baudRate);
     void sendWakeup();
