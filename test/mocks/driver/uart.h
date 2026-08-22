@@ -94,3 +94,16 @@ inline int uart_read_bytes(uart_port_t uart_num, void *buf, uint32_t length, Tic
     (void)ticks_to_wait;
     return 0;
 }
+
+inline esp_err_t uart_wait_tx_done(uart_port_t uart_num, TickType_t ticks_to_wait)
+{
+    (void)uart_num;
+    (void)ticks_to_wait;
+    return ESP_OK;
+}
+
+inline esp_err_t uart_flush_input(uart_port_t uart_num)
+{
+    (void)uart_num;
+    return ESP_OK;
+}
