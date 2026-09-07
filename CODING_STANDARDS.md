@@ -78,7 +78,15 @@ void ExampleClass::processData(const std::string &inputData)
 
 ---
 
-## 6. AI Code Review Prompt / Checklist
+## 6. Licensing & Third-Party Dependency Rules
+
+* **MIT Compatibility:** Only third-party libraries, modules, and components released under permissive, **MIT-compatible licenses** (e.g. MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC) are permitted.
+* **No Copyleft:** Strong or weak copyleft licenses (such as **GPL**, **AGPL**, or statically linked **LGPL**) are strictly prohibited to protect the project's MIT licensing model.
+* **Attribution:** Any newly introduced external library must be added to [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) with its full license text, copyright holder, and repository URL.
+
+---
+
+## 7. AI Code Review Prompt / Checklist
 
 When reviewing pull requests or generating code for this repository, verify:
 - [ ] No `snake_case` identifiers used for variables or methods.
@@ -88,3 +96,5 @@ When reviewing pull requests or generating code for this repository, verify:
 - [ ] Code and comments are exclusively in English.
 - [ ] No passwords, Wi-Fi keys, or sensitive data are hardcoded.
 - [ ] FreeRTOS tasks and ESP-IDF drivers follow lifecycle and memory safety practices.
+- [ ] Any third-party library has an MIT-compatible license and is documented in `THIRD_PARTY_NOTICES.md`.
+
