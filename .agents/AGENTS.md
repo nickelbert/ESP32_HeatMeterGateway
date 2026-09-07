@@ -52,3 +52,13 @@ This project is a PlatformIO ESP-IDF C++ application for the ESP32-C3 (LilyGO T-
 ## 3. Coding Standards & Conventions
 
 All contributions and AI assistants must strictly follow the project coding standards, naming conventions, and formatting guidelines defined in [CODING_STANDARDS.md](../CODING_STANDARDS.md).
+
+---
+
+## 4. Licensing & Third-Party Dependencies
+
+* **Project License:** This project is published under the **MIT License**.
+* **License Compatibility Requirement:** Only third-party libraries and components with **MIT-compatible, permissive licenses** (e.g., MIT, Apache 2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense, Boost) are permitted.
+* **Strict Copyleft Prohibition:** Copyleft-licensed components (such as **GPL**, **AGPL**, or restrictive **LGPL**) must **NEVER** be introduced or linked into this codebase.
+* **Documentation Obligation:** Whenever a new external component or library is added, its license, copyright holder, repository URL, and full license text must be documented in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+

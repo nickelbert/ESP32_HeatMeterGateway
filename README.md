@@ -1,10 +1,12 @@
 # Landis+Gyr Ultraheat T550 MQTT Gateway (ESP32-C3)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A high-performance smart meter gateway for the **Landis+Gyr Ultraheat T550 (LUZ2)** heat meter. Built natively with **ESP-IDF v6.0 and FreeRTOS** in **PlatformIO** for the **LilyGO T-01C3** (ESP32-C3 in ESP-01 form factor).
 
 ---
 
-## 🚀 Features
+## Features
 
 - **Native ESP-IDF & FreeRTOS Architecture:** Non-blocking FreeRTOS tasks for optical meter reading, web server, telnet console, and MQTT client.
 - **Optical IR Interface (IEC 62056-21):**
@@ -30,7 +32,7 @@ A high-performance smart meter gateway for the **Landis+Gyr Ultraheat T550 (LUZ2
 
 ---
 
-## 📌 Pinout & Hardware Connection
+## Pinout & Hardware Connection
 
 Designed as a drop-in replacement for ESP-01 IR read heads using the **LilyGO T-01C3**:
 
@@ -47,7 +49,7 @@ Designed as a drop-in replacement for ESP-01 IR read heads using the **LilyGO T-
 
 ---
 
-## 🛠️ Building & Flashing
+## Building & Flashing
 
 ### Requirements
 - [PlatformIO Core](https://platformio.org/) or VSCode with the PlatformIO extension.
@@ -75,21 +77,22 @@ Once flashed and connected to WiFi:
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-1. Connect to the fallback access point **`ESP-HeatMeter-Setup`** or navigate to `http://<ESP-IP>/`.
-2. Fill out the configuration fields:
-   - **WiFi SSID & Password**
-   - **MQTT Broker (IP/Host & Port)**
-   - **MQTT Username & Password**
-   - **MQTT State Topic** (default: `ultraheat/state`)
-   - **Read Interval** (default: `3600` seconds / 1 hour)
-   - **Dummy Mode** (enable to test via Telnet without IR communication)
-3. Click **Save Configuration & Restart**.
+Connect to the setup access point **`ESP-HeatMeter-Setup`** and open **`http://192.168.4.1/`** in your browser (or `http://<ESP-IP>/` if already connected to WiFi):
+
+- **WiFi SSID & Password**
+- **MQTT Broker (IP/Host & Port)**
+- **MQTT Username & Password**
+- **MQTT State Topic** (default: `ultraheat/state`)
+- **Read Interval** (default: `3600` seconds / 1 hour)
+- **Dummy Mode** (enable to test via Telnet without IR communication)
+
+Click **Save Configuration & Restart** to save settings to NVS and reboot into Station mode.
 
 ---
 
-## 📡 Home Assistant Integration
+## Home Assistant Integration
 
 When connected to MQTT, the gateway automatically discovers and creates the device **"Landis+Gyr T550"** with the following entities:
 
@@ -121,7 +124,7 @@ When connected to MQTT, the gateway automatically discovers and creates the devi
 
 ---
 
-## 🖥️ Telnet Debug Console
+## Telnet Debug Console
 
 Connect via port 23:
 ```bash
@@ -133,5 +136,22 @@ telnet <ESP-IP> 23
 
 ---
 
-## 📄 License
-MIT License.
+## License & Attribution
+
+This project is licensed under the **[MIT License](LICENSE)** - see the [LICENSE](LICENSE) file for details.
+
+### Third-Party Libraries & Dependencies
+This project uses several open-source libraries and frameworks. All third-party copyright notices and licenses are documented in detail in **[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)**:
+
+- **[cJSON](https://github.com/DaveGamble/cJSON)** – [MIT License](THIRD_PARTY_NOTICES.md#1-cjson) (Copyright © Dave Gamble & cJSON contributors)
+- **[esp-mqtt](https://github.com/espressif/esp-mqtt)** – [Apache License 2.0](THIRD_PARTY_NOTICES.md#2-esp-mqtt) (Copyright © Espressif Systems & Tuan PM)
+- **[ESP-IDF Framework](https://github.com/espressif/esp-idf)** – [Apache License 2.0](THIRD_PARTY_NOTICES.md#3-esp-idf-framework) (Copyright © Espressif Systems)
+- **[FreeRTOS Kernel](https://github.com/FreeRTOS/FreeRTOS-Kernel)** – [MIT License](THIRD_PARTY_NOTICES.md#4-freertos-kernel) (Copyright © Amazon.com, Inc. / Real Time Engineers Ltd.)
+- **[lwIP TCP/IP Stack](https://savannah.nongnu.org/projects/lwip/)** – [BSD-3-Clause](THIRD_PARTY_NOTICES.md#5-lwip) (Copyright © Swedish Institute of Computer Science)
+- **[Unity Test Framework](https://github.com/ThrowTheSwitch/Unity)** – [MIT License](THIRD_PARTY_NOTICES.md#6-unity-test-framework) (Copyright © Mike Karlesky, Mark VanderVoord, Greg Williams)
+
+---
+
+## AI Disclosure / Transparency Notice
+
+Documentation and code components in this repository have been created with the assistance of generative AI coding tools and were reviewed, verified, and tested by the maintainer.
