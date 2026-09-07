@@ -29,7 +29,7 @@ void MqttHandler::mqttEventHandler(void *handlerArgs, esp_event_base_t base, int
 
     switch ((esp_mqtt_event_id_t)eventId)
     {
-        case MQTT_EVENT_CONNECTED:
+                case MQTT_EVENT_CONNECTED:
         {
             self->m_isConnectedState = true;
             telnetServer.telnetPrint("[MQTT] Connected to broker\r\n");
@@ -37,6 +37,8 @@ void MqttHandler::mqttEventHandler(void *handlerArgs, esp_event_base_t base, int
 
             esp_mqtt_client_subscribe(self->m_clientHandle, "ultraheat/command", 0);
             self->sendHaAutoDiscovery();
+
+            meterT550.forceReading();
             break;
         }
 

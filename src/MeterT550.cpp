@@ -12,6 +12,8 @@ extern TelnetServer telnetServer;
 
 static MeterT550 *meterInstance = nullptr;
 
+static uint8_t retryCount = 0;
+
 static const uint8_t nullArray[40] = {0};
 static const char reqArray[5] = {'/', '?', '!', '\r', '\n'};
 
@@ -200,6 +202,8 @@ void MeterT550::sendWakeup()
 {
     uart_write_bytes(uartPort, (const char *)nullArray, sizeof(nullArray));
     uart_write_bytes(uartPort, reqArray, sizeof(reqArray));
+    uart_wait_tx_done(uartPort, pdMS_TO_TICKS(200));
+    uart_flush_input(uartPort);
 }
 
 void MeterT550::readIdent()
@@ -231,10 +235,22 @@ void MeterT550::readIdent()
 
     if ((getMillis() - m_timestampSend) > 5000)
     {
-        telnetServer.telnetPrint("[Meter] Timeout waiting for identification\r\n");
         ESP_LOGW(TAG, "Timeout waiting for identification");
         m_currentState = MeterState::Idle;
         m_identifier.clear();
+
+        uint32_t intervalMs = configManager.m_readIntervalSeconds * 1000UL;
+        if (retryCount < 1 && intervalMs > 30000)
+        {
+            retryCount++;
+            telnetServer.telnetPrint("[Meter] Readout failed. Retrying once in 30s...\r\n");
+            m_lastReadingTimestamp = getMillis() - intervalMs + 30000;
+        }
+        else
+        {
+            retryCount = 0;
+            telnetServer.telnetPrint("[Meter] Readout failed. Next try in regular interval.\r\n");
+        }
     }
 }
 
@@ -264,10 +280,11 @@ void MeterT550::receiveMeterData()
         }
     }
 
-    if ((getMillis() - m_timestampSend) > 2500)
+        if ((getMillis() - m_timestampSend) > 2500)
     {
         telnetServer.telnetPrint("[Meter] Readout complete\r\n");
         ESP_LOGI(TAG, "Readout complete. Triggering MQTT publish");
+        retryCount = 0;
         m_currentState = MeterState::Idle;
         m_receiveBuffer.clear();
         triggerMqttPublish();
