@@ -97,8 +97,8 @@ void test_ha_discovery_total_count(void)
 {
     testMqttHandler->sendHaAutoDiscovery();
 
-    // 22 sensors + 1 read button = 23 discovery messages
-    TEST_ASSERT_EQUAL_INT(23, g_publishedMqttMessages.size());
+    // 22 sensors + 1 read button + 2 update sensors = 25 discovery messages
+    TEST_ASSERT_EQUAL_INT(25, g_publishedMqttMessages.size());
 }
 
 void test_ha_energy_sensor_discovery_payload(void)

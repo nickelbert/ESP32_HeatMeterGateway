@@ -19,4 +19,6 @@ public:
     void sendHaAutoDiscovery();
     void sendState();
     bool isConnected() const;
+    void sendUpdateState(const std::string &latestVersion, const std::string &releaseUrl, const std::string &title);
+    void sendHaUpdateDiscovery();
 };

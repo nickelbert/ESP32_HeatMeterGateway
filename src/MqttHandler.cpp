@@ -2,6 +2,9 @@
 #include "ConfigManager.h"
 #include "TelnetServer.h"
 #include "MeterT550.h"
+#ifndef UNIT_TEST
+#include "WebServer.h"
+#endif
 #include "esp_log.h"
 #include "esp_app_desc.h"
 #include <algorithm>
@@ -29,13 +32,14 @@ void MqttHandler::mqttEventHandler(void *handlerArgs, esp_event_base_t base, int
 
     switch ((esp_mqtt_event_id_t)eventId)
     {
-                case MQTT_EVENT_CONNECTED:
+        case MQTT_EVENT_CONNECTED:
         {
             self->m_isConnectedState = true;
             telnetServer.telnetPrint("[MQTT] Connected to broker\r\n");
             ESP_LOGI(TAG, "Connected to MQTT broker");
 
             esp_mqtt_client_subscribe(self->m_clientHandle, "ultraheat/command", 0);
+            esp_mqtt_client_subscribe(self->m_clientHandle, "ultraheat/update/install", 0);
             self->sendHaAutoDiscovery();
 
             meterT550.forceReading();
@@ -67,6 +71,22 @@ void MqttHandler::mqttEventHandler(void *handlerArgs, esp_event_base_t base, int
                 telnetServer.telnetPrint("[MQTT] Triggering forced meter readout\r\n");
                 ESP_LOGI(TAG, "Forced readout triggered via MQTT command");
                 meterT550.forceReading();
+            }
+            else if (upperData == "CHECK_UPDATE" || upperData == "CHECK")
+            {
+                telnetServer.telnetPrint("[MQTT] Triggering update check\r\n");
+                ESP_LOGI(TAG, "Update check triggered via MQTT");
+                #ifndef UNIT_TEST
+                WebServer::triggerUpdateCheck();
+                #endif
+            }
+            else if (topic == "ultraheat/update/install" || upperData == "INSTALL")
+            {
+                telnetServer.telnetPrint("[MQTT] Update installation triggered via Home Assistant\r\n");
+                ESP_LOGI(TAG, "Update install triggered via MQTT");
+                #ifndef UNIT_TEST
+                WebServer::installLatestUpdate();
+                #endif
             }
             break;
         }
@@ -205,6 +225,39 @@ void MqttHandler::sendHaAutoDiscovery()
     publishHaSensor("9.21", "Asset Number", "", "", "", "mdi:barcode");
     publishHaSensor("9.24", "Nominal Flow", "m³/h", "volume_flow_rate", "", "mdi:pipe");
 
+    // 7. Home Assistant Update Entity
+    const char *topicUpdate = "homeassistant/update/T550_firmware/config";
+    const char *payloadUpdate = R"({
+        "name": "Firmware",
+        "unique_id": "t550_firmware_update",
+        "device_class": "firmware",
+        "state_topic": "ultraheat/update/state",
+        "command_topic": "ultraheat/update/install",
+        "payload_install": "INSTALL",
+        "device": {
+            "identifiers": ["t550_meter"],
+            "name": "Landis+Gyr T550",
+            "manufacturer": "Landis+Gyr",
+            "model": "Ultraheat T550"
+        }
+    })";
+    esp_mqtt_client_publish(m_clientHandle, topicUpdate, payloadUpdate, 0, 1, 1);
+
+    // 8. Button to trigger update check from Home Assistant
+    const char *topicCheckBtn = "homeassistant/button/T550_check_update/config";
+    const char *payloadCheckBtn = R"({
+        "name": "Check Firmware Update",
+        "command_topic": "ultraheat/command",
+        "payload_press": "CHECK_UPDATE",
+        "device_class": "update",
+        "icon": "mdi:cloud-search",
+        "unique_id": "t550_button_check_update",
+        "device": {
+            "identifiers": ["t550_meter"]
+        }
+    })";
+    esp_mqtt_client_publish(m_clientHandle, topicCheckBtn, payloadCheckBtn, 0, 1, 1);
+
     // Remote read trigger button
     const char *topicButton = "homeassistant/button/T550_read/config";
     const char *payloadButton = R"({
@@ -255,4 +308,25 @@ void MqttHandler::sendState()
 bool MqttHandler::isConnected() const
 {
     return m_isConnectedState;
+}
+
+void MqttHandler::sendUpdateState(const std::string &latestVersion, const std::string &releaseUrl, const std::string &title)
+{
+    if (m_clientHandle == nullptr || !m_isConnectedState) return;
+
+    const esp_app_desc_t *appDesc = esp_app_get_description();
+
+    cJSON *doc = cJSON_CreateObject();
+    cJSON_AddStringToObject(doc, "installed_version", appDesc->version);
+    cJSON_AddStringToObject(doc, "latest_version", latestVersion.c_str());
+    if (!releaseUrl.empty()) cJSON_AddStringToObject(doc, "release_url", releaseUrl.c_str());
+    if (!title.empty()) cJSON_AddStringToObject(doc, "title", title.c_str());
+
+    char *payload = cJSON_PrintUnformatted(doc);
+    if (payload != nullptr)
+    {
+        esp_mqtt_client_publish(m_clientHandle, "ultraheat/update/state", payload, 0, 1, 1);
+        cJSON_free(payload);
+    }
+    cJSON_Delete(doc);
 }

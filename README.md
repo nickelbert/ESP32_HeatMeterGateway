@@ -1,6 +1,10 @@
 # Landis+Gyr Ultraheat T550 MQTT Gateway (ESP32-C3)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Status: Work in Progress](https://img.shields.io/badge/Status-Work%20in%20Progress-orange.svg)]()
+
+> [!WARNING]
+> **Work in Progress (WIP):** This project is currently under active development. Features, configuration options, and interfaces may change at any time. Testing and feedback are welcome, but use at your own risk.
 
 A high-performance smart meter gateway for the **Landis+Gyr Ultraheat T550 (LUZ2)** heat meter. Built natively with **ESP-IDF v6.0 and FreeRTOS** in **PlatformIO** for the **LilyGO T-01C3** (ESP32-C3 in ESP-01 form factor).
 
