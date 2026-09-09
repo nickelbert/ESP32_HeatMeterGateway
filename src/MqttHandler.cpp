@@ -2,7 +2,9 @@
 #include "ConfigManager.h"
 #include "TelnetServer.h"
 #include "MeterT550.h"
+#ifndef UNIT_TEST
 #include "WebServer.h"
+#endif
 #include "esp_log.h"
 #include "esp_app_desc.h"
 #include <algorithm>
@@ -74,13 +76,17 @@ void MqttHandler::mqttEventHandler(void *handlerArgs, esp_event_base_t base, int
             {
                 telnetServer.telnetPrint("[MQTT] Triggering update check\r\n");
                 ESP_LOGI(TAG, "Update check triggered via MQTT");
+                #ifndef UNIT_TEST
                 WebServer::triggerUpdateCheck();
+                #endif
             }
             else if (topic == "ultraheat/update/install" || upperData == "INSTALL")
             {
                 telnetServer.telnetPrint("[MQTT] Update installation triggered via Home Assistant\r\n");
                 ESP_LOGI(TAG, "Update install triggered via MQTT");
+                #ifndef UNIT_TEST
                 WebServer::installLatestUpdate();
+                #endif
             }
             break;
         }
