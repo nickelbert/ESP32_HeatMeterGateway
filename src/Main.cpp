@@ -41,14 +41,25 @@ extern "C" void app_main(void)
     webServer.setup();
     meterT550.setup();
     mqttHandler.setup();
+    
+    uint32_t lastUpdateCheckSeconds = 0;
 
     while (1)
     {
         ESP_LOGI(TAG, "[Main] Heartbeat tick... (WiFi: %s, IP: %s, MQTT: %s, Telnet: %s)", 
-                 wifiManager.isConnected() ? "Connected" : (wifiManager.isApMode() ? "SoftAP" : "Connecting"),
-                 wifiManager.getIpAddress().c_str(),
-                 mqttHandler.isConnected() ? "Connected" : "Disconnected",
-                 telnetServer.hasClient() ? "Client Connected" : "No Client");
+        wifiManager.isConnected() ? "Connected" : (wifiManager.isApMode() ? "SoftAP" : "Connecting"),
+        wifiManager.getIpAddress().c_str(),
+        mqttHandler.isConnected() ? "Connected" : "Disconnected",
+        telnetServer.hasClient() ? "Client Connected" : "No Client");
+
+        // check for updates automatically every 24 hours (86400 seconds)
+        uint32_t nowSeconds = esp_timer_get_time() / 1000000;
+        if (configManager.m_githubAutoCheck && 
+            (wifiManager.isConnected() && (lastUpdateCheckSeconds == 0 || (nowSeconds - lastUpdateCheckSeconds) >= 86400)))
+        {
+            lastUpdateCheckSeconds = nowSeconds;
+            WebServer::triggerUpdateCheck();
+        }
 
         if (telnetServer.hasClient())
         {

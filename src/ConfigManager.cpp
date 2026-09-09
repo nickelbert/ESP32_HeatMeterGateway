@@ -57,6 +57,28 @@ void ConfigManager::loadConfig()
         m_dummyMode = (dummyVal != 0);
     }
 
+    readNvsString(nvsHandle, "ghRepo", m_githubRepo);
+    uint8_t updateAutoCheckVal = 0;
+    if (nvs_get_u8(nvsHandle, "ghUpdateCheck", &updateAutoCheckVal) == ESP_OK)
+    {
+        m_githubAutoCheck = (updateAutoCheckVal != 0);
+    }
+    uint8_t updateAutoUpdateVal = 0;
+    if (nvs_get_u8(nvsHandle, "ghUpdate", &updateAutoUpdateVal) == ESP_OK)
+    {
+        m_githubAutoUpdate = (updateAutoUpdateVal != 0);
+    }
+    uint8_t preVal = 0;
+    if (nvs_get_u8(nvsHandle, "ghPre", &preVal) == ESP_OK)
+    {
+        m_githubIncludePrerelease = (preVal != 0);
+    }
+    uint8_t nightlyVal = 0;
+    if (nvs_get_u8(nvsHandle, "ghNightly", &nightlyVal) == ESP_OK)
+    {
+        m_githubIncludeNightly = (nightlyVal != 0);
+    }
+
     nvs_close(nvsHandle);
     ESP_LOGI(TAG, "Configuration loaded successfully");
 }
@@ -80,6 +102,11 @@ void ConfigManager::saveConfig()
     nvs_set_str(nvsHandle, "mqttTopic", m_mqttTopic.c_str());
     nvs_set_u32(nvsHandle, "interval", m_readIntervalSeconds);
     nvs_set_u8(nvsHandle, "dummyMode", m_dummyMode ? 1 : 0);
+    nvs_set_str(nvsHandle, "ghRepo", m_githubRepo.c_str());
+    nvs_set_u8(nvsHandle, "ghUpdateCheck", m_githubAutoCheck ? 1 : 0);
+    nvs_set_u8(nvsHandle, "ghUpdate", m_githubAutoUpdate ? 1 : 0);
+    nvs_set_u8(nvsHandle, "ghPre", m_githubIncludePrerelease ? 1 : 0);
+    nvs_set_u8(nvsHandle, "ghNightly", m_githubIncludeNightly ? 1 : 0);
 
     err = nvs_commit(nvsHandle);
     if (err != ESP_OK)
