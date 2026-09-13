@@ -60,7 +60,7 @@ Designed as a drop-in replacement for ESP-01 IR read heads using the **LilyGO T-
 You can flash the firmware directly from any Chromium-based browser (**Google Chrome**, **Microsoft Edge**, or **Opera**) without installing Python, PlatformIO, or any toolchains on your computer.
 
 #### 1. 1-Click Installation (ESP Web Tools)
-1. Open the <a href="https://nickelbert.github.io/ESP32_HeatMeterGateway/" target="_blank"><strong>WebSerial Flasher</strong></a> (or run locally: `python -m http.server --directory docs 8000` and open `http://localhost:8000/`).
+1. Open the **[WebSerial Flasher](https://nickelbert.github.io/ESP32_HeatMeterGateway/)** (or run locally: `python -m http.server --directory docs 8000` and open `http://localhost:8000/`).
 2. Connect your LilyGO T-01C3 or ESP32-S3 via USB-to-UART adapter.
    - **Bootloader Mode (LilyGO T-01C3 / ESP-01):** Ensure `GPIO9` (Pin 5 / BOOT) is connected to `GND` while powering on or resetting the adapter if your programmer does not toggle DTR/RTS automatically.
 3. Click **"Connect & Flash Device"** and select the serial COM port from the browser prompt.
@@ -69,7 +69,7 @@ You can flash the firmware directly from any Chromium-based browser (**Google Ch
 6. Once complete, you can open the serial console directly in the browser to view startup logs at 115200 Baud.
 
 #### 2. Generic WebSerial Tools (Adafruit / Espressif ESP Launchpad / esp.huhn.me)
-If you prefer third-party browser tools like <a href="https://adafruit.github.io/Adafruit_WebSerial_ESPTool/" target="_blank">Adafruit WebSerial ESPTool</a>, <a href="https://esp.huhn.me/" target="_blank">esp.huhn.me</a>, or <a href="https://espressif.github.io/esp-launchpad/" target="_blank">Espressif ESP Launchpad</a>:
+If you prefer third-party browser tools like [Adafruit WebSerial ESPTool](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/), [esp.huhn.me](https://esp.huhn.me/), or [Espressif ESP Launchpad](https://espressif.github.io/esp-launchpad/):
 
 - **Single Factory Image (Easiest):**
   Download `firmware-esp32-c3-factory.bin` (or `firmware-esp32-s3-factory.bin`) from the [latest release](https://github.com/nickelbert/ESP32_HeatMeterGateway/releases) and flash it to offset:
