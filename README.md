@@ -55,30 +55,61 @@ Designed as a drop-in replacement for ESP-01 IR read heads using the **LilyGO T-
 
 ## Building & Flashing
 
-### Requirements
+### Method 1: WebSerial Browser Flasher (Recommended for First-Time Setup)
+
+You can flash the firmware directly from any Chromium-based browser (**Google Chrome**, **Microsoft Edge**, or **Opera**) without installing Python, PlatformIO, or any toolchains on your computer.
+
+#### 1. 1-Click Installation (ESP Web Tools)
+1. Open the **[WebSerial Flasher](https://nickelbert.github.io/ESP32_HeatMeterGateway/)** (or run locally: `python -m http.server --directory docs 8000` and open `http://localhost:8000/`).
+2. Connect your LilyGO T-01C3 or ESP32-S3 via USB-to-UART adapter.
+   - **Bootloader Mode (LilyGO T-01C3 / ESP-01):** Ensure `GPIO9` (Pin 5 / BOOT) is connected to `GND` while powering on or resetting the adapter if your programmer does not toggle DTR/RTS automatically.
+3. Click **"Connect & Flash Device"** and select the serial COM port from the browser prompt.
+4. The flasher automatically detects your chip family (`ESP32-C3` or `ESP32-S3`).
+5. Select **"Install Landis+Gyr Ultraheat T550 Gateway"** and check *"Erase device"* for a clean first-time install.
+6. Once complete, you can open the serial console directly in the browser to view startup logs at 115200 Baud.
+
+#### 2. Generic WebSerial Tools (Adafruit / Espressif ESP Launchpad / esp.huhn.me)
+If you prefer third-party browser tools like [Adafruit WebSerial ESPTool](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/), [esp.huhn.me](https://esp.huhn.me/), or [Espressif ESP Launchpad](https://espressif.github.io/esp-launchpad/):
+
+- **Single Factory Image (Easiest):**
+  Download `firmware-esp32-c3-factory.bin` (or `firmware-esp32-s3-factory.bin`) from the [latest release](https://github.com/nickelbert/ESP32_HeatMeterGateway/releases) and flash it to offset:
+  - Offset: **`0x0`**
+
+- **Individual Partitions (Advanced):**
+  | Partition File | Flash Offset | Description |
+  |---|---|---|
+  | `bootloader.bin` | `0x0` | ESP-IDF 2nd-stage Bootloader |
+  | `partitions.bin` | `0x8000` | Partition Table (NVS, OTA slots) |
+  | `ota_data_initial.bin` | `0xe000` | Initial OTA boot slot marker |
+  | `firmware.bin` | `0x10000` | Application firmware |
+
+---
+
+### Method 2: Local PlatformIO Build & Flash (Command Line)
+
+#### Requirements
 - [PlatformIO Core](https://platformio.org/) or VSCode with the PlatformIO extension.
 
-### Initial Flash (via USB / Serial)
+#### Initial Flash via USB
 1. Connect your ESP32-C3 / LilyGO T-01C3 via USB-to-UART adapter.
 2. Build and upload the project:
    ```bash
-   pio run --target upload
+   pio run -e esp32-c3 --target upload
    ```
+   *(Note: The build process automatically generates `firmware-factory.bin` in `.pio/build/esp32-c3/` via post-build script).*
 3. Open the serial monitor (115200 Baud):
    ```bash
    pio device monitor -b 115200
    ```
-
+---
 ### Over-The-Air (OTA) Updates (via WiFi)
-Once flashed and connected to WiFi:
-
+Once the gateway is running and connected to your WiFi network, subsequent updates do not require USB:
 - **Browser Upload (Push):** Open `http://<ESP-IP>/`, select `.pio/build/esp32-c3/firmware.bin` under *Firmware Update (Push)*.
 - **Terminal Upload (Push):**
   ```powershell
   curl -X POST --data-binary "@.pio\build\esp32-c3\firmware.bin" http://<ESP-IP>/update
   ```
 - **Remote Server Update (Pull):** Enter the firmware URL in the web UI under *Remote Update (Pull)* and click *Check & Pull Update*.
-
 ---
 
 ## Configuration
@@ -153,6 +184,7 @@ This project uses several open-source libraries and frameworks. All third-party 
 - **[FreeRTOS Kernel](https://github.com/FreeRTOS/FreeRTOS-Kernel)** – [MIT License](THIRD_PARTY_NOTICES.md#4-freertos-kernel) (Copyright © Amazon.com, Inc. / Real Time Engineers Ltd.)
 - **[lwIP TCP/IP Stack](https://savannah.nongnu.org/projects/lwip/)** – [BSD-3-Clause](THIRD_PARTY_NOTICES.md#5-lwip) (Copyright © Swedish Institute of Computer Science)
 - **[Unity Test Framework](https://github.com/ThrowTheSwitch/Unity)** – [MIT License](THIRD_PARTY_NOTICES.md#6-unity-test-framework) (Copyright © Mike Karlesky, Mark VanderVoord, Greg Williams)
+- **[ESP Web Tools](https://github.com/esphome/esp-web-tools)** – [Apache License 2.0](THIRD_PARTY_NOTICES.md#7-esp-web-tools) (Copyright © Nabu Casa, Inc. / ESPHome contributors)
 
 ---
 

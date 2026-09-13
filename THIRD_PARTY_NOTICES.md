@@ -16,6 +16,7 @@ It makes use of the following third-party open-source libraries and components. 
 | **FreeRTOS Kernel** | bundled in IDF | [MIT](#4-freertos-kernel) | Amazon.com, Inc. or its affiliates / Real Time Engineers Ltd. | Real-time multitasking & scheduler |
 | **lwIP** | bundled in IDF | [BSD-3-Clause](#5-lwip) | Swedish Institute of Computer Science, Adam Dunkels | Embedded TCP/IP networking stack |
 | **Unity** | PlatformIO | [MIT](#6-unity-test-framework) | Mike Karlesky, Mark VanderVoord, Greg Williams | Unit testing framework (`env:native`) |
+| **ESP Web Tools** | 10.x | [Apache 2.0](#7-esp-web-tools) | Nabu Casa, Inc. / ESPHome contributors | Browser-based WebSerial firmware flasher |
 
 ---
 
@@ -332,3 +333,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
+
+---
+
+### 7. ESP Web Tools
+**License:** Apache License 2.0  
+**Copyright:** (c) 2021-2024 Nabu Casa, Inc. / ESPHome contributors  
+**Repository:** https://github.com/esphome/esp-web-tools  
+*Licensed under the Apache License 2.0 (see full text in Section 2 above).*

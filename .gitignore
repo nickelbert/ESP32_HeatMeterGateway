@@ -23,7 +23,7 @@ platformio_local.ini
 *.local.ini
 *secrets*
 .agents/*.local.*
-.agents/local.md
+.agents/rules/local.md
 .agents/private.md
 .gemini/
 
@@ -36,3 +36,6 @@ logfile*.txt
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Web flasher local binaries
+docs/*.bin
