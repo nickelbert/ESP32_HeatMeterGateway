@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -32,8 +32,43 @@
       width: 100%;
     }
     header {
+      position: relative;
       text-align: center;
       margin-bottom: 2rem;
+      padding-top: 1rem;
+    }
+    .lang-switcher {
+      position: absolute;
+      top: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 0.375rem;
+      padding: 0.2rem 0.4rem;
+      font-size: 0.85rem;
+    }
+    .lang-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-weight: 600;
+      padding: 0.2rem 0.4rem;
+      border-radius: 0.25rem;
+      transition: all 0.2s;
+    }
+    .lang-btn:hover {
+      color: #fff;
+    }
+    .lang-btn.active {
+      color: #fff;
+      background: var(--primary);
+    }
+    .lang-divider {
+      color: var(--border);
+      margin: 0 0.2rem;
     }
     h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: #fff; }
     .subtitle { color: var(--text-muted); font-size: 1rem; }
@@ -81,6 +116,7 @@
       color: var(--warning);
       margin-top: 1rem;
       font-weight: 500;
+      display: block;
     }
     ol, ul { padding-left: 1.5rem; margin-bottom: 1rem; }
     li { margin-bottom: 0.5rem; color: #cbd5e1; }
@@ -126,110 +162,237 @@
 <body>
   <div class="container">
     <header>
-      <h1>Landis+Gyr Ultraheat T550 Gateway</h1>
-      <p class="subtitle">WebSerial Firmware Flasher für ESP32-C3 & ESP32-S3</p>
+      <div class="lang-switcher">
+        <button id="btn-en" class="lang-btn active" onclick="setLanguage('en')">EN</button>
+        <span class="lang-divider">|</span>
+        <button id="btn-de" class="lang-btn" onclick="setLanguage('de')">DE</button>
+      </div>
+      <h1 data-i18n="title">Landis+Gyr Ultraheat T550 Gateway</h1>
+      <p class="subtitle" data-i18n="subtitle">WebSerial Firmware Flasher for ESP32-C3 & ESP32-S3</p>
     </header>
 
     <div class="card">
-      <h2>🚀 1-Klick Web-Installation</h2>
-      <p>Flashe die Firmware direkt aus dem Browser auf deinen ESP32-C3 (LilyGO T-01C3) oder ESP32-S3. Es werden keine Treiber oder Programme auf deinem Rechner benötigt (außer Google Chrome, MS Edge oder Opera).</p>
+      <h2 data-i18n="flash_title">🚀 1-Click Web Installation</h2>
+      <p data-i18n="flash_desc">Flash the firmware directly from your browser to your ESP32-C3 (LilyGO T-01C3) or ESP32-S3. No software, drivers, or toolchains required on your PC (just Google Chrome, Microsoft Edge, or Opera).</p>
 
       <div class="flash-box">
         <esp-web-install-button manifest="manifest.json">
-          <button slot="activate">🔌 Gerät verbinden & Flashen</button>
-          <span slot="unsupported" class="unsupported-msg">
-            ⚠️ Dein Browser unterstützt die Web Serial API nicht. Bitte nutze Google Chrome, Microsoft Edge oder Opera auf dem Desktop.
+          <button slot="activate" id="btn-connect" data-i18n="btn_connect">🔌 Connect & Flash Device</button>
+          <span slot="unsupported" class="unsupported-msg" data-i18n="unsupported_msg">
+            ⚠️ Your browser does not support the Web Serial API. Please use Google Chrome, Microsoft Edge, or Opera on desktop.
           </span>
         </esp-web-install-button>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.75rem;">
-          Tipp: Nach dem Verbinden kannst du über denselben Button auch die <strong>Logs & Konsole</strong> öffnen.
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.75rem;" data-i18n-html="console_tip">
+          Tip: After connecting, you can also view <strong>Logs & Console</strong> via the same button.
         </p>
       </div>
 
-      <h3>Schritte zur Installation:</h3>
+      <h3 style="margin-bottom:0.75rem;" data-i18n="steps_title">Installation Steps:</h3>
       <ol>
-        <li>Verbinde das Board über einen USB-zu-UART-Adapter mit deinem Computer.</li>
-        <li><strong>Bootloader-Modus (wichtig bei LilyGO T-01C3 / ESP-01):</strong> Halte <code>GPIO9</code> (Pin 5 / BOOT) gegen <code>GND</code> und betätige kurz Reset (oder stecke den Adapter ein), falls dein Programmierer DTR/RTS nicht automatisch steuert.</li>
-        <li>Klicke oben auf <strong>"Gerät verbinden & Flashen"</strong> und wähle im Browser-Popup den passenden COM-Port aus.</li>
-        <li>Setze bei einer Erstinstallation den Haken bei <em>"Erase device"</em> (Flash vollständig löschen) und starte den Vorgang.</li>
-        <li>Nach erfolgreichem Flash startet der ESP32 neu und öffnet den WLAN-Access-Point <code>ESP-HeatMeter-Setup</code> (IP: <code>192.168.4.1</code>).</li>
+        <li data-i18n="step_1">Connect the board to your computer using a USB-to-UART adapter.</li>
+        <li data-i18n-html="step_2"><strong>Bootloader Mode (LilyGO T-01C3 / ESP-01):</strong> Connect <code>GPIO9</code> (Pin 5 / BOOT) to <code>GND</code> while powering on or resetting the adapter if your programmer does not toggle DTR/RTS automatically.</li>
+        <li data-i18n-html="step_3">Click <strong>"Connect & Flash Device"</strong> above and select your serial COM port from the browser prompt.</li>
+        <li data-i18n-html="step_4">For a first-time installation, check <em>"Erase device"</em> to completely wipe the flash, then start the installation.</li>
+        <li data-i18n-html="step_5">After a successful flash, the ESP32 restarts and broadcasts the setup WiFi network <code>ESP-HeatMeter-Setup</code> (IP: <code>192.168.4.1</code>).</li>
       </ol>
     </div>
 
     <div class="card">
-      <h2>🔧 Alternative Flashtools (Adafruit / Espressif Web Flasher)</h2>
-      <p>Falls du externe WebSerial-Tools wie <a href="https://adafruit.github.io/Adafruit_WebSerial_ESPTool/" target="_blank" style="color:var(--primary);">Adafruit WebSerial ESPTool</a>, <a href="https://esp.huhn.me/" target="_blank" style="color:var(--primary);">esp.huhn.me</a> oder <a href="https://espressif.github.io/esp-launchpad/" target="_blank" style="color:var(--primary);">Espressif ESP Launchpad</a> nutzt:</p>
+      <h2 data-i18n="alt_title">🔧 Alternative Flash Tools (Adafruit / Espressif Web Flasher)</h2>
+      <p data-i18n-html="alt_desc">If you prefer third-party browser tools like <a href="https://adafruit.github.io/Adafruit_WebSerial_ESPTool/" target="_blank" style="color:var(--primary);">Adafruit WebSerial ESPTool</a>, <a href="https://esp.huhn.me/" target="_blank" style="color:var(--primary);">esp.huhn.me</a>, or <a href="https://espressif.github.io/esp-launchpad/" target="_blank" style="color:var(--primary);">Espressif ESP Launchpad</a>:</p>
       
       <table style="margin-top: 1rem;">
         <thead>
           <tr>
-            <th>Methode</th>
-            <th>Offset</th>
-            <th>Datei</th>
-            <th>Beschreibung</th>
+            <th data-i18n="th_method">Method</th>
+            <th data-i18n="th_offset">Offset</th>
+            <th data-i18n="th_file">File</th>
+            <th data-i18n="th_desc">Description</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td><span class="badge badge-success">Empfohlen</span></td>
+            <td><span class="badge badge-success" data-i18n="badge_rec">Recommended</span></td>
             <td><code>0x0</code></td>
             <td><code>firmware-factory.bin</code></td>
-            <td>Kombiniertes Image (Bootloader + Partitions + App)</td>
+            <td data-i18n="row_factory">Single Combined Image (Bootloader + Partitions + App)</td>
           </tr>
           <tr>
-            <td><span class="badge">Manuell</span></td>
+            <td><span class="badge" data-i18n="badge_manual">Manual</span></td>
             <td><code>0x0</code></td>
             <td><code>bootloader.bin</code></td>
-            <td>ESP-IDF 2nd stage Bootloader</td>
+            <td data-i18n="row_boot">ESP-IDF 2nd-stage Bootloader</td>
           </tr>
           <tr>
-            <td><span class="badge">Manuell</span></td>
+            <td><span class="badge" data-i18n="badge_manual">Manual</span></td>
             <td><code>0x8000</code></td>
             <td><code>partitions.bin</code></td>
-            <td>Partitionstabelle (NVS, OTA-Slots)</td>
+            <td data-i18n="row_part">Partition Table (NVS, OTA slots)</td>
           </tr>
           <tr>
-            <td><span class="badge">Manuell</span></td>
+            <td><span class="badge" data-i18n="badge_manual">Manual</span></td>
             <td><code>0xe000</code></td>
             <td><code>ota_data_initial.bin</code></td>
-            <td>OTA Data Boot-Auswahl</td>
+            <td data-i18n="row_ota">Initial OTA boot slot marker</td>
           </tr>
           <tr>
-            <td><span class="badge">Manuell</span></td>
+            <td><span class="badge" data-i18n="badge_manual">Manual</span></td>
             <td><code>0x10000</code></td>
             <td><code>firmware.bin</code></td>
-            <td>Anwendungs-Firmware</td>
+            <td data-i18n="row_app">Application firmware</td>
           </tr>
         </tbody>
       </table>
     </div>
 
     <div class="card">
-      <h2>📌 LilyGO T-01C3 Pinbelegung (ESP-01 Formfaktor)</h2>
+      <h2 data-i18n="pin_title">📌 LilyGO T-01C3 Pinout (ESP-01 Form Factor)</h2>
       <table>
         <thead>
           <tr>
-            <th>ESP-01 Pin</th>
-            <th>Signal</th>
-            <th>ESP32-C3 GPIO</th>
-            <th>Funktion</th>
+            <th data-i18n="th_esp01">ESP-01 Pin</th>
+            <th data-i18n="th_signal">Signal</th>
+            <th data-i18n="th_gpio">ESP32-C3 GPIO</th>
+            <th data-i18n="th_func">Function</th>
           </tr>
         </thead>
         <tbody>
-          <tr><td>Pin 1</td><td>GND</td><td>GND</td><td>Masse</td></tr>
-          <tr><td>Pin 2</td><td>TXD</td><td><code>GPIO21</code></td><td>IR-Sendediode (Wakeup)</td></tr>
-          <tr><td>Pin 4</td><td>CH_PD / EN</td><td>EN</td><td>3.3V Enable (Pullup)</td></tr>
-          <tr><td>Pin 5</td><td>GPIO0 / BOOT</td><td><code>GPIO9</code></td><td>Boot-Strapping (Low zum Flashen)</td></tr>
-          <tr><td>Pin 7</td><td>RXD</td><td><code>GPIO20</code></td><td>IR-Fototransistor (Empfänger)</td></tr>
-          <tr><td>Pin 8</td><td>VCC</td><td>3.3V</td><td>Stromversorgung</td></tr>
+          <tr><td>Pin 1</td><td>GND</td><td>GND</td><td data-i18n="p_gnd">Ground</td></tr>
+          <tr><td>Pin 2</td><td>TXD</td><td><code>GPIO21</code></td><td data-i18n="p_tx">IR Transmitter Diode (Wakeup)</td></tr>
+          <tr><td>Pin 4</td><td>CH_PD / EN</td><td>EN</td><td data-i18n="p_en">3.3V Enable (Pullup)</td></tr>
+          <tr><td>Pin 5</td><td>GPIO0 / BOOT</td><td><code>GPIO9</code></td><td data-i18n="p_boot">Boot Strapping (Low to flash)</td></tr>
+          <tr><td>Pin 7</td><td>RXD</td><td><code>GPIO20</code></td><td data-i18n="p_rx">IR Phototransistor Receiver (Data)</td></tr>
+          <tr><td>Pin 8</td><td>VCC</td><td>3.3V</td><td data-i18n="p_vcc">Power Supply</td></tr>
         </tbody>
       </table>
     </div>
 
     <div class="footer">
-      <p>Landis+Gyr Ultraheat T550 MQTT Gateway &bull; Lizenz: <a href="https://github.com/nickelbert/ESP32_HeatMeterGateway/blob/main/LICENSE" target="_blank">MIT License</a></p>
-      <p>WebSerial Flasher angetrieben durch <a href="https://github.com/esphome/esp-web-tools" target="_blank">ESP Web Tools</a> (Apache-2.0)</p>
+      <p data-i18n-html="footer_license">Landis+Gyr Ultraheat T550 MQTT Gateway &bull; License: <a href="https://github.com/nickelbert/ESP32_HeatMeterGateway/blob/main/LICENSE" target="_blank">MIT License</a></p>
+      <p data-i18n-html="footer_powered">WebSerial Flasher powered by <a href="https://github.com/esphome/esp-web-tools" target="_blank">ESP Web Tools</a> (Apache-2.0)</p>
     </div>
   </div>
+
+    <script>
+    const translations = {
+      en: {
+        title: "Landis+Gyr Ultraheat T550 Gateway",
+        subtitle: "WebSerial Firmware Flasher for ESP32-C3 & ESP32-S3",
+        flash_title: "🚀 1-Click Web Installation",
+        flash_desc: "Flash the firmware directly from your browser to your ESP32-C3 (LilyGO T-01C3) or ESP32-S3. No software, drivers, or toolchains required on your PC (just Google Chrome, Microsoft Edge, or Opera).",
+        btn_connect: "🔌 Connect & Flash Device",
+        unsupported_msg: "⚠️ Your browser does not support the Web Serial API. Please use Google Chrome, Microsoft Edge, or Opera on desktop.",
+        console_tip: "Tip: After connecting, you can also view <strong>Logs & Console</strong> via the same button.",
+        steps_title: "Installation Steps:",
+        step_1: "Connect the board to your computer using a USB-to-UART adapter.",
+        step_2: "<strong>Bootloader Mode (LilyGO T-01C3 / ESP-01):</strong> Connect <code>GPIO9</code> (Pin 5 / BOOT) to <code>GND</code> while powering on or resetting the adapter if your programmer does not toggle DTR/RTS automatically.",
+        step_3: "Click <strong>\"Connect & Flash Device\"</strong> above and select your serial COM port from the browser prompt.",
+        step_4: "For a first-time installation, check <em>\"Erase device\"</em> to completely wipe the flash, then start the installation.",
+        step_5: "After a successful flash, the ESP32 restarts and broadcasts the setup WiFi network <code>ESP-HeatMeter-Setup</code> (IP: <code>192.168.4.1</code>).",
+        alt_title: "🔧 Alternative Flash Tools (Adafruit / Espressif Web Flasher)",
+        alt_desc: "If you prefer third-party browser tools like <a href=\"https://adafruit.github.io/Adafruit_WebSerial_ESPTool/\" target=\"_blank\" style=\"color:var(--primary);\">Adafruit WebSerial ESPTool</a>, <a href=\"https://esp.huhn.me/\" target=\"_blank\" style=\"color:var(--primary);\">esp.huhn.me</a>, or <a href=\"https://espressif.github.io/esp-launchpad/\" target=\"_blank\" style=\"color:var(--primary);\">Espressif ESP Launchpad</a>:",
+        th_method: "Method",
+        th_offset: "Offset",
+        th_file: "File",
+        th_desc: "Description",
+        badge_rec: "Recommended",
+        badge_manual: "Manual",
+        row_factory: "Single Combined Image (Bootloader + Partitions + App)",
+        row_boot: "ESP-IDF 2nd-stage Bootloader",
+        row_part: "Partition Table (NVS, OTA slots)",
+        row_ota: "Initial OTA boot slot marker",
+        row_app: "Application firmware",
+        pin_title: "📌 LilyGO T-01C3 Pinout (ESP-01 Form Factor)",
+        th_esp01: "ESP-01 Pin",
+        th_signal: "Signal",
+        th_gpio: "ESP32-C3 GPIO",
+        th_func: "Function",
+        p_gnd: "Ground",
+        p_tx: "IR Transmitter Diode (Wakeup)",
+        p_en: "3.3V Enable (Pullup)",
+        p_boot: "Boot Strapping (Low to flash)",
+        p_rx: "IR Phototransistor Receiver (Data)",
+        p_vcc: "Power Supply",
+        footer_license: "Landis+Gyr Ultraheat T550 MQTT Gateway &bull; License: <a href=\"https://github.com/nickelbert/ESP32_HeatMeterGateway/blob/main/LICENSE\" target=\"_blank\">MIT License</a>",
+        footer_powered: "WebSerial Flasher powered by <a href=\"https://github.com/esphome/esp-web-tools\" target=\"_blank\">ESP Web Tools</a> (Apache-2.0)"
+      },
+      de: {
+        title: "Landis+Gyr Ultraheat T550 Gateway",
+        subtitle: "WebSerial Firmware Flasher für ESP32-C3 & ESP32-S3",
+        flash_title: "🚀 1-Klick Web-Installation",
+        flash_desc: "Flashe die Firmware direkt aus dem Browser auf deinen ESP32-C3 (LilyGO T-01C3) oder ESP32-S3. Es werden keine Treiber oder Programme auf deinem Rechner benötigt (außer Google Chrome, MS Edge oder Opera).",
+        btn_connect: "🔌 Gerät verbinden & Flashen",
+        unsupported_msg: "⚠️ Dein Browser unterstützt die Web Serial API nicht. Bitte nutze Google Chrome, Microsoft Edge oder Opera auf dem Desktop.",
+        console_tip: "Tipp: Nach dem Verbinden kannst du über denselben Button auch die <strong>Logs & Konsole</strong> öffnen.",
+        steps_title: "Schritte zur Installation:",
+        step_1: "Verbinde das Board über einen USB-zu-UART-Adapter mit deinem Computer.",
+        step_2: "<strong>Bootloader-Modus (wichtig bei LilyGO T-01C3 / ESP-01):</strong> Halte <code>GPIO9</code> (Pin 5 / BOOT) gegen <code>GND</code> und betätige kurz Reset (oder stecke den Adapter ein), falls dein Programmierer DTR/RTS nicht automatisch steuert.",
+        step_3: "Klicke oben auf <strong>\"Gerät verbinden & Flashen\"</strong> und wähle im Browser-Popup den passenden COM-Port aus.",
+        step_4: "Setze bei einer Erstinstallation den Haken bei <em>\"Erase device\"</em> (Flash vollständig löschen) und starte den Vorgang.",
+        step_5: "Nach erfolgreichem Flash startet der ESP32 neu und öffnet den WLAN-Access-Point <code>ESP-HeatMeter-Setup</code> (IP: <code>192.168.4.1</code>).",
+        alt_title: "🔧 Alternative Flashtools (Adafruit / Espressif Web Flasher)",
+        alt_desc: "Falls du externe WebSerial-Tools wie <a href=\"https://adafruit.github.io/Adafruit_WebSerial_ESPTool/\" target=\"_blank\" style=\"color:var(--primary);\">Adafruit WebSerial ESPTool</a>, <a href=\"https://esp.huhn.me/\" target=\"_blank\" style=\"color:var(--primary);\">esp.huhn.me</a> oder <a href=\"https://espressif.github.io/esp-launchpad/\" target=\"_blank\" style=\"color:var(--primary);\">Espressif ESP Launchpad</a> nutzt:",
+        th_method: "Methode",
+        th_offset: "Offset",
+        th_file: "Datei",
+        th_desc: "Beschreibung",
+        badge_rec: "Empfohlen",
+        badge_manual: "Manuell",
+        row_factory: "Kombiniertes Image (Bootloader + Partitions + App)",
+        row_boot: "ESP-IDF 2nd-stage Bootloader",
+        row_part: "Partitionstabelle (NVS, OTA-Slots)",
+        row_ota: "OTA Data Boot-Auswahl",
+        row_app: "Anwendungs-Firmware",
+        pin_title: "📌 LilyGO T-01C3 Pinbelegung (ESP-01 Formfaktor)",
+        th_esp01: "ESP-01 Pin",
+        th_signal: "Signal",
+        th_gpio: "ESP32-C3 GPIO",
+        th_func: "Funktion",
+        p_gnd: "Masse",
+        p_tx: "IR-Sendediode (Wakeup)",
+        p_en: "3.3V Enable (Pullup)",
+        p_boot: "Boot-Strapping (Low zum Flashen)",
+        p_rx: "IR-Fototransistor (Empfänger)",
+        p_vcc: "Stromversorgung",
+        footer_license: "Landis+Gyr Ultraheat T550 MQTT Gateway &bull; Lizenz: <a href=\"https://github.com/nickelbert/ESP32_HeatMeterGateway/blob/main/LICENSE\" target=\"_blank\">MIT License</a>",
+        footer_powered: "WebSerial Flasher angetrieben durch <a href=\"https://github.com/esphome/esp-web-tools\" target=\"_blank\">ESP Web Tools</a> (Apache-2.0)"
+      }
+    };
+
+    function setLanguage(lang) {
+      const t = translations[lang] || translations.en;
+      document.documentElement.lang = lang;
+      try {
+        localStorage.setItem("flasher_lang", lang);
+      } catch (e) {
+        // Fallback falls localStorage deaktiviert ist
+      }
+
+      // Buttons aktualisieren
+      const btnEn = document.getElementById("btn-en");
+      const btnDe = document.getElementById("btn-de");
+      if (btnEn) btnEn.classList.toggle("active", lang === "en");
+      if (btnDe) btnDe.classList.toggle("active", lang === "de");
+
+      // Reine Texte aktualisieren
+      document.querySelectorAll("[data-i18n]").forEach(el => {
+        const key = el.getAttribute("data-i18n");
+        if (t[key]) el.textContent = t[key];
+      });
+
+      // HTML-Inhalte (mit Links/Formatierung) aktualisieren
+      document.querySelectorAll("[data-i18n-html]").forEach(el => {
+        const key = el.getAttribute("data-i18n-html");
+        if (t[key]) el.innerHTML = t[key];
+      });
+    }
+
+    // Beim Laden: Gespeicherte Sprache oder Standard 'en'
+    let initialLang = "en";
+    try {
+      initialLang = localStorage.getItem("flasher_lang") || "en";
+    } catch (e) {}
+    setLanguage(initialLang);
+  </script>
 </body>
 </html>
