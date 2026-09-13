@@ -10,7 +10,6 @@ private:
     httpd_handle_t m_serverHandle = nullptr;
 
     static std::string pendingPullUrl;
-    static std::string pendingGithubToken;
     static std::string s_latestFoundVersion;
     static std::string s_latestDownloadUrl;
     static std::string s_latestReleaseUrl;

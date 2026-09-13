@@ -24,7 +24,6 @@ extern ConfigManager configManager;
 extern TelnetServer telnetServer;
 
 std::string WebServer::pendingPullUrl = "";
-std::string WebServer::pendingGithubToken = "";
 std::string WebServer::s_latestFoundVersion = "";
 std::string WebServer::s_latestDownloadUrl = "";
 std::string WebServer::s_latestReleaseUrl = "";
@@ -88,13 +87,7 @@ void WebServer::restartTask(void *pvParameters)
 
 esp_err_t WebServer::httpClientInitCb(esp_http_client_handle_t http_client)
 {
-    if (!pendingGithubToken.empty())
-    {
-        std::string authHeader = "Bearer " + pendingGithubToken;
-        esp_http_client_set_header(http_client, "Authorization", authHeader.c_str());
-        esp_http_client_set_header(http_client, "Accept", "application/octet-stream");
-        esp_http_client_set_header(http_client, "User-Agent", "ESP32-HeatMeterGateway");
-    }
+    esp_http_client_set_header(http_client, "User-Agent", "ESP32-HeatMeterGateway");
     return ESP_OK;
 }
 
@@ -104,140 +97,13 @@ static const char *TARGET_BIN_NAME = "firmware-esp32-s3.bin";
 static const char *TARGET_BIN_NAME = "firmware-esp32-c3.bin";
 #endif
 
-static std::string resolveGitHubAssetUrl(const std::string &inputUrl, const std::string &token)
-{
-    if (token.empty() || inputUrl.find("github.com") == std::string::npos || inputUrl.find("api.github.com") != std::string::npos)
-    {
-        return inputUrl;
-    }
-
-    size_t ghPos = inputUrl.find("github.com/");
-    if (ghPos == std::string::npos)
-    {
-        return inputUrl;
-    }
-
-    std::string path = inputUrl.substr(ghPos + 11);
-    std::istringstream ss(path);
-    std::string owner, repo, releasesKw, actionKw, tag;
-
-    std::getline(ss, owner, '/');
-    std::getline(ss, repo, '/');
-    std::getline(ss, releasesKw, '/');
-    std::getline(ss, actionKw, '/');
-    std::getline(ss, tag, '/');
-
-    if (owner.empty() || repo.empty())
-    {
-        return inputUrl;
-    }
-
-    std::string targetBinName = TARGET_BIN_NAME;
-    if (inputUrl.find(".bin") != std::string::npos)
-    {
-        size_t lastSlash = inputUrl.rfind('/');
-        if (lastSlash != std::string::npos)
-        {
-            std::string fn = inputUrl.substr(lastSlash + 1);
-            if (!fn.empty()) targetBinName = fn;
-        }
-    }
-
-    std::string apiUrl;
-    if (actionKw == "latest" || inputUrl.find("/releases/latest") != std::string::npos)
-    {
-        apiUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/releases/latest";
-    }
-    else
-    {
-        if (tag.empty()) tag = actionKw;
-        apiUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/releases/tags/" + tag;
-    }
-
-    ESP_LOGI(TAG, "Resolving GitHub release asset for '%s' via API: %s", targetBinName.c_str(), apiUrl.c_str());
-
-    esp_http_client_config_t apiConfig = {};
-    apiConfig.url = apiUrl.c_str();
-    apiConfig.timeout_ms = 15000;
-    apiConfig.crt_bundle_attach = esp_crt_bundle_attach;
-    apiConfig.max_redirection_count = 5;
-
-    esp_http_client_handle_t apiClient = esp_http_client_init(&apiConfig);
-    if (apiClient == nullptr)
-    {
-        return inputUrl;
-    }
-
-    std::string authHeader = "Bearer " + token;
-    esp_http_client_set_header(apiClient, "Authorization", authHeader.c_str());
-    esp_http_client_set_header(apiClient, "User-Agent", "ESP32-HeatMeterGateway");
-    esp_http_client_set_header(apiClient, "Accept", "application/vnd.github.v3+json");
-
-    esp_err_t err = esp_http_client_open(apiClient, 0);
-    if (err != ESP_OK)
-    {
-        esp_http_client_cleanup(apiClient);
-        return inputUrl;
-    }
-
-    esp_http_client_fetch_headers(apiClient);
-
-    std::string responseBody;
-    char buf[512];
-    int readBytes = 0;
-    while ((readBytes = esp_http_client_read(apiClient, buf, sizeof(buf) - 1)) > 0)
-    {
-        buf[readBytes] = '\0';
-        responseBody += buf;
-        if (responseBody.length() > 65536) break;
-    }
-
-    esp_http_client_close(apiClient);
-    esp_http_client_cleanup(apiClient);
-
-    std::string resolvedAssetUrl = "";
-    cJSON *root = cJSON_Parse(responseBody.c_str());
-    if (root != nullptr)
-    {
-        cJSON *assets = cJSON_GetObjectItem(root, "assets");
-        if (cJSON_IsArray(assets))
-        {
-            int assetCount = cJSON_GetArraySize(assets);
-            for (int i = 0; i < assetCount; i++)
-            {
-                cJSON *asset = cJSON_GetArrayItem(assets, i);
-                cJSON *nameItem = cJSON_GetObjectItem(asset, "name");
-                cJSON *urlItem = cJSON_GetObjectItem(asset, "url");
-
-                if (cJSON_IsString(nameItem) && cJSON_IsString(urlItem))
-                {
-                    if (std::string(nameItem->valuestring) == targetBinName)
-                    {
-                        resolvedAssetUrl = urlItem->valuestring;
-                        ESP_LOGI(TAG, "Auto-resolved asset URL: %s", resolvedAssetUrl.c_str());
-                        break;
-                    }
-                }
-            }
-        }
-        cJSON_Delete(root);
-    }
-
-    return !resolvedAssetUrl.empty() ? resolvedAssetUrl : inputUrl;
-}
-
 void WebServer::pullUpdateTask(void *pvParameters)
 {
     ESP_LOGI(TAG, "Starting Pull-OTA process for: %s", pendingPullUrl.c_str());
-    telnetServer.telnetPrint("[OTA] Resolving GitHub release asset...\r\n");
-
-    std::string downloadUrl = resolveGitHubAssetUrl(pendingPullUrl, pendingGithubToken);
-    ESP_LOGI(TAG, "Final download target URL: %s", downloadUrl.c_str());
-
     telnetServer.telnetPrint("[OTA] Starting remote download from URL...\r\n");
 
     esp_http_client_config_t httpConfig = {};
-    httpConfig.url = downloadUrl.c_str();
+    httpConfig.url = pendingPullUrl.c_str();
     httpConfig.timeout_ms = 30000;
     httpConfig.buffer_size = 4096;
     httpConfig.buffer_size_tx = 1024;
@@ -328,7 +194,7 @@ esp_err_t WebServer::rootGetHandler(httpd_req_t *req)
     <div class='info'>Uploads and flashes binary into the secondary partition.</div>
   </form>
 
-  <h3>Firmware Update (GitHub & URL)</h3>
+    <h3>Firmware Update (GitHub & URL)</h3>
   <form id='repoForm'>
     <label>GitHub Repository (Owner/Repo)</label>
     <input type='text' id='ghRepo' name='gh_repo' value=')" + configManager.m_githubRepo + R"(' placeholder='owner/repo'>
@@ -353,9 +219,6 @@ esp_err_t WebServer::rootGetHandler(httpd_req_t *req)
       Nightlys einschließen
     </label>
 
-    <label>GitHub Token (optional für private Repos)</label>
-    <input type='password' id='ghToken' placeholder='ghp_...'>
-
     <div style='display:flex; gap:10px; margin-top:15px;'>
       <button type='button' style='margin-top:0;' onclick='saveRepoSettings()'>Repo speichern</button>
       <button type='button' class='secondary' style='margin-top:0;' id='checkBtn' onclick='checkForUpdates()'>Auf Updates prüfen</button>
@@ -367,7 +230,6 @@ esp_err_t WebServer::rootGetHandler(httpd_req_t *req)
   <form id='pullForm' action='/pull_update' method='POST' style='margin-top:20px;'>
     <label>Ausgewählte Firmware-URL</label>
     <input type='text' id='firmwareUrl' name='url' placeholder='https://.../firmware.bin'>
-    <input type='hidden' id='formGhToken' name='gh_token'>
     <button type='submit' class='secondary' id='installBtn'>Pull Update manuell starten</button>
   </form>
 </div>
@@ -393,10 +255,17 @@ function uploadFile() {
 }
 function saveRepoSettings() {
   const repo = document.getElementById('ghRepo').value.trim();
+  const autoCheck = document.getElementById('ghUpdateCheck').checked ? '1' : '0';
+  const autoUpdate = document.getElementById('ghUpdate').checked ? '1' : '0';
   const pre = document.getElementById('ghPre').checked ? '1' : '0';
   const nightly = document.getElementById('ghNightly').checked ? '1' : '0';
 
-  const body = 'gh_repo=' + encodeURIComponent(repo) + '&gh_pre=' + pre + '&gh_nightly=' + nightly;
+  const body = 'gh_repo=' + encodeURIComponent(repo) + 
+               '&gh_auto_check=' + autoCheck + 
+               '&gh_auto_update=' + autoUpdate + 
+               '&gh_pre=' + pre + 
+               '&gh_nightly=' + nightly;
+
   fetch('/save_repo', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -411,7 +280,6 @@ function checkForUpdates() {
   const repo = document.getElementById('ghRepo').value.trim();
   const includePre = document.getElementById('ghPre').checked;
   const includeNightly = document.getElementById('ghNightly').checked;
-  const token = document.getElementById('ghToken').value.trim();
   const statusDiv = document.getElementById('updateStatus');
   const targetBin = ')" + std::string(TARGET_BIN_NAME) + R"(';
   const currentVersion = ')" + versionStr + R"(';
@@ -423,10 +291,9 @@ function checkForUpdates() {
 
   statusDiv.innerHTML = '<div class="info">Prüfe GitHub Releases für <b>' + repo + '</b>...</div>';
 
-  const headers = { 'Accept': 'application/vnd.github.v3+json' };
-  if (token) headers['Authorization'] = 'Bearer ' + token;
-
-  fetch('https://api.github.com/repos/' + repo + '/releases?per_page=10', { headers: headers })
+  fetch('https://api.github.com/repos/' + repo + '/releases?per_page=10', {
+    headers: { 'Accept': 'application/vnd.github.v3+json' }
+  })
     .then(res => {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
@@ -438,18 +305,20 @@ function checkForUpdates() {
       for (const rel of releases) {
         if (rel.draft) continue;
 
-        const isNightly = /nightly|snapshot/i.test(rel.tag_name) || /nightly|snapshot/i.test(rel.name || '');
+        const isNightly = (rel.tag_name.indexOf('nightly') !== -1 || (rel.name && rel.name.indexOf('nightly') !== -1));
         if (isNightly && !includeNightly) continue;
         if (rel.prerelease && !isNightly && !includePre) continue;
 
         if (rel.assets && Array.isArray(rel.assets)) {
-          const asset = rel.assets.find(a => a.name === targetBin);
-          if (asset) {
-            selectedRelease = rel;
-            matchedAsset = asset;
-            break;
+          for (const asset of rel.assets) {
+            if (asset.name === targetBin) {
+              selectedRelease = rel;
+              matchedAsset = asset;
+              break;
+            }
           }
         }
+        if (selectedRelease) break;
       }
 
       if (!selectedRelease || !matchedAsset) {
@@ -461,7 +330,6 @@ function checkForUpdates() {
       const downloadUrl = matchedAsset.browser_download_url;
 
       document.getElementById('firmwareUrl').value = downloadUrl;
-      document.getElementById('formGhToken').value = token;
 
       const isNewer = (releaseVer !== currentVersion);
       let html = '<div style="background:#e8f4fd; border:1px solid #b6d4fe; padding:12px; border-radius:6px;">';
@@ -646,7 +514,6 @@ esp_err_t WebServer::pullUpdatePostHandler(httpd_req_t *req)
        if (params.find("url") != params.end() && !params["url"].empty())
     {
         pendingPullUrl = params["url"];
-        pendingGithubToken = (params.find("gh_token") != params.end()) ? params["gh_token"] : "";
         ESP_LOGI(TAG, "Pull-OTA requested for URL: %s", pendingPullUrl.c_str());
 
         std::string response = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Updating</title></head><body>"
@@ -740,7 +607,6 @@ void WebServer::installLatestUpdate()
         return;
     }
     pendingPullUrl = s_latestDownloadUrl;
-    pendingGithubToken = "";
     xTaskCreate(&WebServer::pullUpdateTask, "pullUpdateTask", 8192, nullptr, 5, nullptr);
 }
 
@@ -876,13 +742,13 @@ esp_err_t WebServer::saveRepoPostHandler(httpd_req_t *req)
     parseFormBody(postBody, params);
 
     if (params.find("gh_repo") != params.end()) configManager.m_githubRepo = params["gh_repo"];
-    configManager.m_githubAutoCheck = (params.find("ghUpdateCheck") != params.end() && params["ghUpdateCheck"] == "1");
-    configManager.m_githubAutoUpdate = (params.find("ghUpdate") != params.end() && params["ghUpdate"] == "1");
-    configManager.m_githubIncludePrerelease = (params.find("ghpre") != params.end() && params["ghpre"] == "1");
-    configManager.m_githubIncludeNightly = (params.find("ghnightly") != params.end() && params["ghnightly"] == "1");
+    configManager.m_githubAutoCheck = (params.find("gh_auto_check") != params.end() && params["gh_auto_check"] == "1");
+    configManager.m_githubAutoUpdate = (params.find("gh_auto_update") != params.end() && params["gh_auto_update"] == "1");
+    configManager.m_githubIncludePrerelease = (params.find("gh_pre") != params.end() && params["gh_pre"] == "1");
+    configManager.m_githubIncludeNightly = (params.find("gh_nightly") != params.end() && params["gh_nightly"] == "1");
 
     configManager.saveConfig();
-    ESP_LOGI(TAG, "Saved GitHub Repo settings: %s (Update Check: %d, Auto Update: %d, Pre: %d, Nightly: %d)",
+    ESP_LOGI(TAG, "Saved GitHub Repo settings: %s (AutoCheck: %d, AutoUpdate: %d, Pre: %d, Nightly: %d)",
              configManager.m_githubRepo.c_str(),
              configManager.m_githubAutoCheck,
              configManager.m_githubAutoUpdate,
@@ -892,7 +758,9 @@ esp_err_t WebServer::saveRepoPostHandler(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
 
-    // Direkt einen neuen Check anstoßen
-    triggerUpdateCheck();
+    if (configManager.m_githubAutoCheck)
+    {
+        triggerUpdateCheck();
+    }
     return ESP_OK;
 }
