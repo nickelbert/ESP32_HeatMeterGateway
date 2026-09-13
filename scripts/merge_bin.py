@@ -1,4 +1,5 @@
 import os
+import shutil
 Import("env")
 
 def merge_bin_action(source, target, env):
@@ -57,7 +58,16 @@ def merge_bin_action(source, target, env):
     cmd_str = " ".join(cmd)
     result = env.Execute(cmd_str)
     if result == 0:
-        print(f"[merge_bin] Successfully created factory binary: {factory}\n")
+        print(f"[merge_bin] Successfully created factory binary: {factory}")
+        
+        # Automatisch in docs/ fuer den lokalen Web-Flasher kopieren
+        project_dir = env.subst("$PROJECT_DIR")
+        docs_dir = os.path.join(project_dir, "docs")
+        if os.path.isdir(docs_dir):
+            pio_env = env.subst("$PIOENV")
+            docs_target = os.path.join(docs_dir, f"firmware-{pio_env}-factory.bin")
+            shutil.copyfile(factory, docs_target)
+            print(f"[merge_bin] Copied to docs for web flasher: {docs_target}\n")
     else:
         print(f"[merge_bin] Error generating factory binary (exit code: {result})\n")
 

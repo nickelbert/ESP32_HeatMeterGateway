@@ -36,3 +36,6 @@ logfile*.txt
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Web flasher local binaries
+docs/*.bin
