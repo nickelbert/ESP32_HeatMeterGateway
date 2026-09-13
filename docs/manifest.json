@@ -1,0 +1,19 @@
+{
+  "name": "Landis+Gyr Ultraheat T550 Gateway",
+  "version": "latest",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-C3",
+      "parts": [
+        { "path": "firmware-esp32-c3-factory.bin", "offset": 0 }
+      ]
+    },
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "firmware-esp32-s3-factory.bin", "offset": 0 }
+      ]
+    }
+  ]
+}

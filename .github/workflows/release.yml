@@ -33,13 +33,17 @@ jobs:
           pio run -e esp32-c3
           pio run -e esp32-s3
           mv .pio/build/esp32-c3/firmware.bin firmware-esp32-c3.bin
+          mv .pio/build/esp32-c3/firmware-factory.bin firmware-esp32-c3-factory.bin
           mv .pio/build/esp32-s3/firmware.bin firmware-esp32-s3.bin
+          mv .pio/build/esp32-s3/firmware-factory.bin firmware-esp32-s3-factory.bin
 
       - name: Upload Binaries to Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             firmware-esp32-c3.bin
+            firmware-esp32-c3-factory.bin
             firmware-esp32-s3.bin
+            firmware-esp32-s3-factory.bin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
