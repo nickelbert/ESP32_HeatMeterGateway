@@ -6,12 +6,19 @@ def merge_bin_action(source, target, env):
     build_dir = env.subst("$BUILD_DIR")
     chip = env.BoardConfig().get("build.mcu", "esp32c3")
     flash_size = env.BoardConfig().get("upload.flash_size", "4MB")
-    flash_mode = env.BoardConfig().get("board_build.flash_mode", "dio")
-    flash_freq_raw = str(env.BoardConfig().get("board_build.f_flash", "80000000L")).rstrip("L")
+    try:
+        flash_mode = env.GetProjectOption("board_build.flash_mode")
+    except Exception:
+        flash_mode = env.BoardConfig().get("build.flash_mode", "dio")
+
+    try:
+        flash_freq_raw = str(env.GetProjectOption("board_build.f_flash")).rstrip("L")
+    except Exception:
+        flash_freq_raw = str(env.BoardConfig().get("build.f_flash", "40000000L")).rstrip("L")
     try:
         flash_freq = f"{int(int(flash_freq_raw) / 1000000)}m"
     except ValueError:
-        flash_freq = "80m"
+        flash_freq = "40m"
 
     bootloader = os.path.join(build_dir, "bootloader.bin")
     partitions = os.path.join(build_dir, "partitions.bin")
