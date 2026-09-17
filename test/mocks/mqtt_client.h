@@ -95,6 +95,18 @@ inline esp_err_t esp_mqtt_client_start(esp_mqtt_client_handle_t client)
     return ESP_OK;
 }
 
+inline esp_err_t esp_mqtt_client_stop(esp_mqtt_client_handle_t client)
+{
+    (void)client;
+    return ESP_OK;
+}
+
+inline esp_err_t esp_mqtt_client_destroy(esp_mqtt_client_handle_t client)
+{
+    (void)client;
+    return ESP_OK;
+}
+
 inline int esp_mqtt_client_publish(esp_mqtt_client_handle_t client, const char *topic, const char *data, int len, int qos, int retain)
 {
     (void)client;

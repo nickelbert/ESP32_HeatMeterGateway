@@ -1,5 +1,6 @@
 #include "WifiManager.h"
 #include "ConfigManager.h"
+#include "WebServer.h"
 #include "esp_log.h"
 #include "esp_event.h"
 #include <cstring>
@@ -32,15 +33,17 @@ void WifiManager::eventHandler(void *arg, esp_event_base_t eventBase, int32_t ev
 
             if (!self->m_isApModeActive)
             {
-                if (self->m_retryCount < kMaxRetryAttempts)
+                 if (self->m_retryCount < kMaxRetryAttempts)
                 {
                     self->m_retryCount++;
-                    ESP_LOGW(TAG, "WiFi disconnected. Retrying connection (%d/%d)...", self->m_retryCount, kMaxRetryAttempts);
-                    esp_wifi_connect();
+                    ESP_LOGW(TAG, "WiFi disconnected. Scheduling retry (%d/%d) in %llu s...",
+                             self->m_retryCount, kMaxRetryAttempts, kRetryDelayUs / 1000000ULL);
+                    self->startRetryTimer();
                 }
                 else
                 {
                     ESP_LOGE(TAG, "WiFi connection failed after %d retries. Starting fallback AP mode...", kMaxRetryAttempts);
+                    self->stopRetryTimer();
                     self->startAccessPoint();
                 }
             }
@@ -67,7 +70,7 @@ void WifiManager::eventHandler(void *arg, esp_event_base_t eventBase, int32_t ev
     }
     else if (eventBase == IP_EVENT)
     {
-        if (eventId == IP_EVENT_STA_GOT_IP)
+                if (eventId == IP_EVENT_STA_GOT_IP)
         {
             ip_event_got_ip_t *event = static_cast<ip_event_got_ip_t *>(eventData);
             char ipBuf[16];
@@ -75,7 +78,11 @@ void WifiManager::eventHandler(void *arg, esp_event_base_t eventBase, int32_t ev
             self->m_isConnectedState = true;
             self->m_ipAddress = ipBuf;
             self->m_retryCount = 0;
+            self->stopRetryTimer();
             self->stopReconnectTimer();
+
+            // Immediately confirm running firmware upon acquiring network IP
+            WebServer::confirmRunningFirmware();
 
             if (self->m_isApModeActive)
             {
@@ -132,6 +139,40 @@ void WifiManager::stopReconnectTimer()
     }
 }
 
+void WifiManager::retryTimerCallback(void *arg)
+{
+    WifiManager *self = static_cast<WifiManager *>(arg);
+    if (!self->m_isConnectedState && !self->m_isApModeActive)
+    {
+        ESP_LOGI(TAG, "Executing delayed WiFi reconnect attempt (%d/%d)...", self->m_retryCount, kMaxRetryAttempts);
+        esp_wifi_connect();
+    }
+}
+
+void WifiManager::startRetryTimer()
+{
+    if (m_retryTimer == nullptr)
+    {
+        esp_timer_create_args_t timerArgs = {};
+        timerArgs.callback = &WifiManager::retryTimerCallback;
+        timerArgs.arg = this;
+        timerArgs.name = "wifiRetry";
+        ESP_ERROR_CHECK(esp_timer_create(&timerArgs, &m_retryTimer));
+    }
+    esp_timer_stop(m_retryTimer);
+    ESP_ERROR_CHECK(esp_timer_start_once(m_retryTimer, kRetryDelayUs));
+}
+
+void WifiManager::stopRetryTimer()
+{
+    if (m_retryTimer != nullptr)
+    {
+        esp_timer_stop(m_retryTimer);
+        esp_timer_delete(m_retryTimer);
+        m_retryTimer = nullptr;
+    }
+}
+
 void WifiManager::setup()
 {
     ESP_ERROR_CHECK(esp_netif_init());
@@ -170,6 +211,7 @@ void WifiManager::setup()
 
 void WifiManager::stop()
 {
+    stopRetryTimer();
     stopReconnectTimer();
 
     if (m_isConnectedState || m_isApModeActive)
@@ -186,6 +228,7 @@ void WifiManager::stop()
 
 void WifiManager::startStation()
 {
+    stopRetryTimer();
     stopReconnectTimer();
     m_isApModeActive = false;
     m_isConnectedState = false;
@@ -218,6 +261,7 @@ void WifiManager::startAccessPoint()
     m_isConnectedState = false;
     m_retryCount = 0;
     m_apClientCount = 0;
+    stopRetryTimer();
 
     wifi_config_t apConfig = {};
     const char *apSsid = "ESP-HeatMeter-Setup";
@@ -232,7 +276,11 @@ void WifiManager::startAccessPoint()
     {
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &apConfig));
-        ESP_ERROR_CHECK(esp_wifi_start());
+        esp_err_t err = esp_wifi_start();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_STATE)
+        {
+            ESP_ERROR_CHECK(err);
+        }
         ESP_LOGI(TAG, "SoftAP started: SSID '%s' (IP: 192.168.4.1)", apSsid);
     }
     else
@@ -248,12 +296,19 @@ void WifiManager::startAccessPoint()
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &apConfig));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &staConfig));
-        ESP_ERROR_CHECK(esp_wifi_start());
+        esp_err_t err = esp_wifi_start();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_STATE)
+        {
+            ESP_ERROR_CHECK(err);
+        }
         ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-        ESP_LOGI(TAG, "Fallback APSTA mode started: AP '%s' active (IP: 192.168.4.1), background search for '%s'", 
+                ESP_LOGI(TAG, "Fallback APSTA mode started: AP '%s' active (IP: 192.168.4.1), background search for '%s'", 
                  apSsid, configManager.m_wifiSsid.c_str());
         startReconnectTimer();
     }
+
+    // Confirm running firmware in SoftAP mode as web interface is reachable
+    WebServer::confirmRunningFirmware();
 }
 
 bool WifiManager::isConnected() const
