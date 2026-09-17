@@ -3,6 +3,7 @@
 #include "ConfigManager.h"
 #include "TelnetServer.h"
 #include "MqttHandler.h"
+#include "WifiManager.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_ota_ops.h"
@@ -18,6 +19,7 @@
 #include <sstream>
 #include <cstring>
 #include <cstdlib>
+#include <algorithm>
 
 static const char *TAG = "WebServer";
 extern ConfigManager configManager;
@@ -80,8 +82,19 @@ static void parseFormBody(const std::string &body, std::map<std::string, std::st
 
 void WebServer::restartTask(void *pvParameters)
 {
-    vTaskDelay(pdMS_TO_TICKS(3000));
-    ESP_LOGI(TAG, "Rebooting ESP32-C3 now...");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    ESP_LOGI(TAG, "Initiating graceful shutdown before reboot...");
+
+    extern WebServer webServer;
+    extern MqttHandler mqttHandler;
+    extern WifiManager wifiManager;
+
+    webServer.stop();
+    mqttHandler.stop();
+    wifiManager.stop();
+
+    vTaskDelay(pdMS_TO_TICKS(200));
+    ESP_LOGI(TAG, "Rebooting device now...");
     esp_restart();
 }
 
@@ -120,7 +133,7 @@ void WebServer::pullUpdateTask(void *pvParameters)
     {
         ESP_LOGI(TAG, "OTA update successful. Rebooting in 3 seconds...");
         telnetServer.telnetPrint("[OTA] Update successful. Rebooting in 3 seconds...\r\n");
-        xTaskCreate(&WebServer::restartTask, "restartTask", 2048, nullptr, 5, nullptr);
+        xTaskCreate(&WebServer::restartTask, "restartTask", 4096, nullptr, 5, nullptr);
     }
     else
     {
@@ -238,6 +251,16 @@ esp_err_t WebServer::rootGetHandler(httpd_req_t *req)
 function uploadFile() {
   const file = document.getElementById('fileInput').files[0];
   if (!file) return;
+  
+  if (file.name.toLowerCase().includes('factory')) {
+    alert('Fehler: Die Datei "' + file.name + '" ist ein factory.bin Image und darf nicht per OTA geflasht werden!');
+    return;
+  }
+  if (file.size > 1572864) {
+    alert('Fehler: Die Datei ist mit ' + (file.size / (1024*1024)).toFixed(2) + ' MB zu gross fuer die OTA-Partition (max. 1.5 MB)!');
+    return;
+  }
+  
   if (!confirm('Flash firmware ' + file.name + ' now?')) return;
   
   const xhr = new XMLHttpRequest();
@@ -403,7 +426,7 @@ esp_err_t WebServer::savePostHandler(httpd_req_t *req)
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, response.c_str(), response.length());
 
-    xTaskCreate(&WebServer::restartTask, "restartTask", 2048, nullptr, 5, nullptr);
+    xTaskCreate(&WebServer::restartTask, "restartTask", 4096, nullptr, 5, nullptr);
 
     return ESP_OK;
 }
@@ -412,7 +435,6 @@ esp_err_t WebServer::updatePostHandler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "Push-OTA firmware upload started (%d bytes)", req->content_len);
     telnetServer.telnetPrint("[OTA] Push firmware upload started...\r\n");
-
     const esp_partition_t *updatePartition = esp_ota_get_next_update_partition(nullptr);
     if (updatePartition == nullptr)
     {
@@ -420,7 +442,50 @@ esp_err_t WebServer::updatePostHandler(httpd_req_t *req)
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
-
+    if (req->content_len <= 0 || static_cast<size_t>(req->content_len) > updatePartition->size)
+    {
+        ESP_LOGE(TAG, "Invalid firmware upload size: %d bytes (partition max: %u bytes)",
+                 req->content_len, static_cast<unsigned int>(updatePartition->size));
+        telnetServer.telnetPrint("[OTA] Upload rejected: Invalid file size\r\n");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "File size exceeds partition capacity or is empty");
+        return ESP_FAIL;
+    }
+    constexpr size_t kHeaderCheckSize = sizeof(esp_app_desc_t) + 0x20;
+    if (static_cast<size_t>(req->content_len) < kHeaderCheckSize)
+    {
+        ESP_LOGE(TAG, "Firmware binary too small (%d bytes)", req->content_len);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Binary file is too small to be a valid ESP-IDF image");
+        return ESP_FAIL;
+    }
+    char headerBuf[kHeaderCheckSize];
+    size_t headerReceived = 0;
+    while (headerReceived < kHeaderCheckSize)
+    {
+        int bytes = httpd_req_recv(req, headerBuf + headerReceived, kHeaderCheckSize - headerReceived);
+        if (bytes <= 0)
+        {
+            if (bytes == HTTPD_SOCK_ERR_TIMEOUT)
+            {
+                continue;
+            }
+            ESP_LOGE(TAG, "Connection lost while reading image header");
+            httpd_resp_send_500(req);
+            return ESP_FAIL;
+        }
+        headerReceived += bytes;
+    }
+    // Validate ESP image magic (0xE9) and ESP-IDF app descriptor magic (0xABCD5432)
+    const uint8_t imageMagic = static_cast<uint8_t>(headerBuf[0]);
+    const esp_app_desc_t *appDesc = reinterpret_cast<const esp_app_desc_t *>(headerBuf + 0x20);
+    if (imageMagic != 0xE9 || appDesc->magic_word != ESP_APP_DESC_MAGIC_WORD)
+    {
+        ESP_LOGE(TAG, "Invalid firmware binary header! Magic: 0x%02X (expected 0xE9), AppDesc: 0x%08lX (expected 0x%08lX)",
+                 imageMagic, static_cast<unsigned long>(appDesc->magic_word), static_cast<unsigned long>(ESP_APP_DESC_MAGIC_WORD));
+        telnetServer.telnetPrint("[OTA] Upload rejected: Not a valid app binary (factory.bin or corrupted)\r\n");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid firmware header (factory.bin or non-app binary rejected)");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "Valid app binary detected: Project '%s', Version '%s'", appDesc->project_name, appDesc->version);
     esp_ota_handle_t otaHandle = 0;
     esp_err_t err = esp_ota_begin(updatePartition, OTA_WITH_SEQUENTIAL_WRITES, &otaHandle);
     if (err != ESP_OK)
@@ -429,13 +494,19 @@ esp_err_t WebServer::updatePostHandler(httpd_req_t *req)
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
-
+    err = esp_ota_write(otaHandle, headerBuf, headerReceived);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "esp_ota_write failed for header: %s", esp_err_to_name(err));
+        esp_ota_abort(otaHandle);
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
     char buf[1024];
-    int remaining = req->content_len;
-
+    int remaining = req->content_len - headerReceived;
     while (remaining > 0)
     {
-        int bytes = httpd_req_recv(req, buf, std::min((int)sizeof(buf), remaining));
+        int bytes = httpd_req_recv(req, buf, std::min(static_cast<int>(sizeof(buf)), remaining));
         if (bytes <= 0)
         {
             if (bytes == HTTPD_SOCK_ERR_TIMEOUT)
@@ -447,7 +518,6 @@ esp_err_t WebServer::updatePostHandler(httpd_req_t *req)
             httpd_resp_send_500(req);
             return ESP_FAIL;
         }
-
         err = esp_ota_write(otaHandle, buf, bytes);
         if (err != ESP_OK)
         {
@@ -456,10 +526,8 @@ esp_err_t WebServer::updatePostHandler(httpd_req_t *req)
             httpd_resp_send_500(req);
             return ESP_FAIL;
         }
-
         remaining -= bytes;
     }
-
     err = esp_ota_end(otaHandle);
     if (err != ESP_OK)
     {
@@ -467,7 +535,6 @@ esp_err_t WebServer::updatePostHandler(httpd_req_t *req)
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
-
     err = esp_ota_set_boot_partition(updatePartition);
     if (err != ESP_OK)
     {
@@ -475,13 +542,10 @@ esp_err_t WebServer::updatePostHandler(httpd_req_t *req)
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
-
     ESP_LOGI(TAG, "OTA flash completed successfully. Rebooting...");
     telnetServer.telnetPrint("[OTA] Push upload successful. Rebooting...\r\n");
-
     httpd_resp_sendstr(req, "OK");
-    xTaskCreate(&WebServer::restartTask, "restartTask", 2048, nullptr, 5, nullptr);
-
+    xTaskCreate(&WebServer::restartTask, "restartTask", 4096, nullptr, 5, nullptr);
     return ESP_OK;
 }
 
@@ -763,4 +827,25 @@ esp_err_t WebServer::saveRepoPostHandler(httpd_req_t *req)
         triggerUpdateCheck();
     }
     return ESP_OK;
+}
+
+void WebServer::confirmRunningFirmware()
+{
+    const esp_partition_t *runningPartition = esp_ota_get_running_partition();
+    esp_ota_img_states_t otaState;
+    if (esp_ota_get_state_partition(runningPartition, &otaState) == ESP_OK)
+    {
+        if (otaState == ESP_OTA_IMG_PENDING_VERIFY)
+        {
+            esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+            if (err == ESP_OK)
+            {
+                ESP_LOGI(TAG, "Running firmware confirmed valid. Rollback cancelled.");
+            }
+            else
+            {
+                ESP_LOGW(TAG, "Failed to confirm firmware: %s", esp_err_to_name(err));
+            }
+        }
+    }
 }

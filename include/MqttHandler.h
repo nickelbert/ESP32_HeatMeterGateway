@@ -16,6 +16,7 @@ private:
 public:
     static void mqttEventHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, void *eventData);
     void setup();
+    void stop();
     void sendHaAutoDiscovery();
     void sendState();
     bool isConnected() const;

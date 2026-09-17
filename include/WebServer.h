@@ -29,4 +29,5 @@ public:
     void stop();
     static void triggerUpdateCheck();
     static void installLatestUpdate();
+    static void confirmRunningFirmware();
 };

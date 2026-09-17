@@ -11,6 +11,7 @@ class WifiManager
 private:
     static constexpr int kMaxRetryAttempts = 10;
     static constexpr uint64_t kReconnectIntervalUs = 60000000ULL; // 60 seconds
+    static constexpr uint64_t kRetryDelayUs = 2000000ULL;         // 2 seconds
 
     bool m_isConnectedState = false;
     bool m_isApModeActive = false;
@@ -20,14 +21,19 @@ private:
     esp_netif_t *m_staNetif = nullptr;
     esp_netif_t *m_apNetif = nullptr;
     esp_timer_handle_t m_reconnectTimer = nullptr;
+    esp_timer_handle_t m_retryTimer = nullptr;
 
     static void eventHandler(void *arg, esp_event_base_t eventBase, int32_t eventId, void *eventData);
     static void reconnectTimerCallback(void *arg);
+    static void retryTimerCallback(void *arg);
     void startReconnectTimer();
     void stopReconnectTimer();
+    void startRetryTimer();
+    void stopRetryTimer();
 
 public:
     void setup();
+    void stop();
     bool isConnected() const;
     bool isApMode() const;
     int getApClientCount() const;

@@ -56,9 +56,16 @@ extern "C" void app_main(void)
         mqttHandler.isConnected() ? "Connected" : "Disconnected",
         telnetServer.hasClient() ? "Client Connected" : "No Client");
 
-        // check for updates automatically every 24 hours (86400 seconds)
+                // Check for updates automatically every 24 hours (86400 seconds)
         uint32_t nowSeconds = esp_timer_get_time() / 1000000;
-        if (configManager.m_githubAutoCheck && 
+
+        // Confirm running firmware if system runs stable for at least 30 seconds
+        if (nowSeconds >= 30)
+        {
+            WebServer::confirmRunningFirmware();
+        }
+
+        if (configManager.m_githubAutoCheck &&
             (wifiManager.isConnected() && (lastUpdateCheckSeconds == 0 || (nowSeconds - lastUpdateCheckSeconds) >= 86400)))
         {
             lastUpdateCheckSeconds = nowSeconds;
