@@ -19,6 +19,10 @@ WebServer webServer;
 MeterT550 meterT550;
 MqttHandler mqttHandler;
 
+// Alignment anchor in .flash.text to prevent the code size from landing on an exact 64KB boundary,
+// avoiding the upstream esptool 36-byte padding bug during binary packaging.
+static const volatile char __attribute__((used, section(".flash.text"))) g_flash_text_align_padding[16] = "T550_ALIGN_PAD";
+
 extern "C" void app_main(void)
 {
     const esp_app_desc_t *appDesc = esp_app_get_description();
