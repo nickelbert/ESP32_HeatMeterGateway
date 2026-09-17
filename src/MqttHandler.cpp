@@ -140,6 +140,18 @@ void MqttHandler::setup()
     }
 }
 
+void MqttHandler::stop()
+{
+    if (m_clientHandle != nullptr)
+    {
+        ESP_LOGI(TAG, "Stopping MQTT client...");
+        esp_mqtt_client_stop(m_clientHandle);
+        esp_mqtt_client_destroy(m_clientHandle);
+        m_clientHandle = nullptr;
+        m_isConnectedState = false;
+    }
+}
+
 void MqttHandler::publishHaSensor(const std::string &obis, const std::string &name, const std::string &unit,
                                  const std::string &devClass, const std::string &stateClass, const std::string &icon)
 {

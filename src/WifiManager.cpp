@@ -168,6 +168,22 @@ void WifiManager::setup()
     }
 }
 
+void WifiManager::stop()
+{
+    stopReconnectTimer();
+
+    if (m_isConnectedState || m_isApModeActive)
+    {
+        ESP_LOGI(TAG, "Stopping Wi-Fi interface...");
+        esp_wifi_disconnect();
+        esp_wifi_stop();
+        m_isConnectedState = false;
+        m_isApModeActive = false;
+        m_ipAddress = "";
+        m_retryCount = 0;
+    }
+}
+
 void WifiManager::startStation()
 {
     stopReconnectTimer();

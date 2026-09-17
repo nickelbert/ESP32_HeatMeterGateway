@@ -28,6 +28,7 @@ private:
 
 public:
     void setup();
+    void stop();
     bool isConnected() const;
     bool isApMode() const;
     int getApClientCount() const;
