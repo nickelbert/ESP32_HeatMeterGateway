@@ -1,6 +1,76 @@
 import os
 import shutil
+import struct
+import hashlib
 Import("env")
+
+def fix_esptool_padding_bug(firmware_path):
+    """
+    Checks for a known esptool bug where a segment ending exactly on a 64KB boundary
+    (remainder == 0) gets erroneously padded with 36 zero bytes (0x24 - remainder).
+    This pushes the segment into a new 64KB MMU page, causing the bootloader and ESP-IDF
+    MMU mappings to become desynchronized, leading to corrupt DROM/string accesses and bootloops.
+    """
+    if not os.path.isfile(firmware_path):
+        return
+
+    with open(firmware_path, "rb") as f:
+        data = bytearray(f.read())
+
+    if len(data) < 24 or data[0] != 0xe9:
+        return
+
+    seg_count = data[1]
+    offset = 24
+    segments = []
+    fixed = False
+
+    for i in range(seg_count):
+        if offset + 8 > len(data):
+            return
+        load_addr, length = struct.unpack("<II", data[offset:offset+8])
+        seg_data = data[offset+8 : offset+8+length]
+        offset += 8 + length
+
+        seg_end_in_file = offset
+        if (seg_end_in_file % 0x10000 == 0x24) and len(seg_data) >= 36 and seg_data[-36:] == b"\x00" * 36:
+            print(f"[merge_bin] Bug detected: Segment {i} (0x{load_addr:08x}) has 36-byte bogus esptool padding at file offset 0x{seg_end_in_file:x}.")
+            print(f"[merge_bin] Stripping 36-byte padding to prevent MMU page desynchronization.")
+            seg_data = seg_data[:-36]
+            fixed = True
+
+        segments.append((load_addr, seg_data))
+
+    if not fixed:
+        return
+
+    # Reconstruct sanitized binary
+    new_bin = bytearray()
+    new_bin.extend(data[:24])
+
+    calc_checksum = 0xef
+    for load_addr, seg_data in segments:
+        new_bin.extend(struct.pack("<II", load_addr, len(seg_data)))
+        new_bin.extend(seg_data)
+        for b in seg_data:
+            calc_checksum ^= b
+
+    pad_len = 15 - (len(new_bin) % 16)
+    if pad_len < 0:
+        pad_len += 16
+    new_bin.extend(b"\x00" * pad_len)
+    new_bin.append(calc_checksum)
+
+    has_hash = (data[23] == 1) or (len(data) % 16 == 0 and len(data) >= len(new_bin) + 32)
+    if has_hash:
+        digest = hashlib.sha256(new_bin).digest()
+        new_bin.extend(digest)
+
+    with open(firmware_path, "wb") as f:
+        f.write(new_bin)
+
+    print(f"[merge_bin] Successfully sanitized firmware binary: {firmware_path} ({len(new_bin)} bytes)\n")
+
 
 def merge_bin_action(source, target, env):
     build_dir = env.subst("$BUILD_DIR")
@@ -32,6 +102,9 @@ def merge_bin_action(source, target, env):
         if not os.path.isfile(file_path):
             print(f"[merge_bin] Warning: Missing required binary for factory image: {file_path}")
             return
+
+    # Automatically fix esptool 36-byte padding bug if present
+    fix_esptool_padding_bug(firmware)
 
     # Pfad zu esptool.py ermitteln
     python_exe = env.subst("$PYTHONEXE")
